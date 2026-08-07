@@ -1086,6 +1086,7 @@ function handleHostMessage(msg){
       break;
     case 'go_to_question':
       hostState = 'question';
+      currentQuestion = msg.question;
       showQuestionView(msg);
       break;
     case 'question':
@@ -1372,6 +1373,15 @@ function connectPlayerWS(sessionId){
   playerWs.onclose = function(){
     $('#ps-connected').textContent = 'Disconnected';
     $('#ps-connected').style.color = 'var(--red)';
+    // Attempt reconnect after a short delay
+    var savedSessionId = playerSessionId;
+    var savedTeamName = playerName;
+    setTimeout(function(){
+      if(playerState === 'waiting' || playerState === 'question'){
+        console.log('Attempting to reconnect player...');
+        connectPlayerWS(savedSessionId);
+      }
+    }, 3000);
   };
 }
 
@@ -1431,6 +1441,10 @@ function handlePlayerMessage(msg){
       showPlayerLeaderboard(msg);
       break;
     case 'count_updated': break;
+    case 'team_disconnected':
+      // Inform player of disconnect count
+      console.log('Team disconnected, remaining:', msg.count);
+      break;
     case 'final_standings':
       playerState = 'final';
       clearInterval(timerInterval);

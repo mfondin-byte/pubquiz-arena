@@ -124,6 +124,7 @@ class GameSession:
             "max": self.quiz.max_teams
         })
         # Tell a joining player they're in
+        await socket.send_json({"type": "joined", "team_name": name})
         return True
 
     # ── Game play ──────────────────────────────────────────────────────────
@@ -185,11 +186,16 @@ class GameSession:
 
     async def receive_answer(self, team_name: str, answer_id, elapsed: float):
         async with self._lock:
-            # Ignore answers from host
-            if self.teams.get(team_name) and self.teams[team_name].name == "Host":
+            # Ignore answers from host or non-existent teams
+            if team_name not in self.teams:
+                return
+            if self.teams[team_name].name == "Host":
                 return
             if self.teams[team_name].answer is not None:
                 return  # already answered
+            # Guard against None answer_id
+            if answer_id is None:
+                return
             self.teams[team_name].answer = str(answer_id)
             self.teams[team_name].answer_time = round(elapsed, 1)
             self.answers_collected += 1
@@ -289,7 +295,32 @@ class GameSession:
         q_index = self.current_question_idx
         player_teams = {k: v for k, v in self.teams.items() if v.name != "Host"}
         for name, team in player_teams.items():
-            is_correct = team.answer == q["answer"]
+            is_correct = False
+            if team.answer is not None:
+                qa = q["answer"]
+                # Normalize: quiz answer may be int index or string option id
+                if isinstance(qa, int):
+                    # Convert string answer_id to index if possible
+                    if isinstance(team.answer, str):
+                        # Check if team.answer is a string index ("0", "1", etc.)
+                        try:
+                            str_idx = int(team.answer)
+                            if str_idx == qa:
+                                is_correct = True
+                        except ValueError:
+                            pass
+                        # Also check if it's an option ID letter
+                        if not is_correct:
+                            for idx, opt in enumerate(q.get("options", [])):
+                                if str(opt.get("id", "")) == team.answer:
+                                    if idx == qa:
+                                        is_correct = True
+                                    break
+                    else:
+                        is_correct = int(team.answer) == qa
+                else:
+                    # qa is a string (option id)
+                    is_correct = str(team.answer) == str(qa)
             points = 0
             if is_correct:
                 elapsed = team.answer_time or 0
@@ -645,6 +676,18 @@ async def websocket_game(websocket: WebSocket, session_id: str):
     session = None
     quiz = None
 
+    # Heartbeat task to keep WebSocket alive through Render's proxy layer
+    # Render's proxy terminates idle WebSocket connections after ~60s
+    async def heartbeat():
+        while True:
+            await asyncio.sleep(20)  # Ping every 20s
+            try:
+                await websocket.ping()
+            except Exception:
+                break
+
+    heartbeat_task = asyncio.create_task(heartbeat())
+
     try:
         while True:
             data = await websocket.receive_text()
@@ -686,6 +729,7 @@ async def websocket_game(websocket: WebSocket, session_id: str):
                 continue
 
             # --- Other commands (only valid if session exists) ---
+            session = active_sessions.get(session_id)
             if session is None:
                 await websocket.send_json({"type": "error", "message": "No active game session"})
                 continue
@@ -706,8 +750,8 @@ async def websocket_game(websocket: WebSocket, session_id: str):
                     try:
                         await session.receive_answer(team_name, msg.get("answer_id"), elapsed)
                     except Exception as e:
-                        import traceback
-                        traceback.print_exc()
+                        print(f"Answer error for {team_name}: {e}")
+                        await websocket.send_json({"type": "error", "message": f"Failed to submit answer: {e}"})
 
             elif msg.get("type") == "next":
                 session._advance_event.set()
@@ -725,6 +769,11 @@ async def websocket_game(websocket: WebSocket, session_id: str):
                 break
 
     except WebSocketDisconnect:
+        # Cancel heartbeat task
+        try:
+            heartbeat_task.cancel()
+        except Exception:
+            pass
         if session:
             session.teams = {
                 name: t for name, t in session.teams.items()
@@ -738,17 +787,45 @@ async def websocket_game(websocket: WebSocket, session_id: str):
             except Exception:
                 pass
     except Exception as e:
+        # Cancel heartbeat task
+        try:
+            heartbeat_task.cancel()
+        except Exception:
+            pass
         import traceback
         print(f"WebSocket error: {e}")
         traceback.print_exc()
 
 
-# Clean up dead sessions (optional: cron or on each request)
+# ── Background session cleanup ──────────────────────────────────────────────
+
+async def _session_cleanup_loop():
+    """Remove empty sessions every 60s to free memory on Render."""
+    while True:
+        await asyncio.sleep(60)
+        dead_sessions = []
+        for sid, session in active_sessions.items():
+            # Remove if no teams left (all players disconnected)
+            player_teams = [n for n, t in session.teams.items() if t.name != "Host"]
+            if not player_teams and len(session.teams) <= 1:
+                dead_sessions.append(sid)
+        for sid in dead_sessions:
+            del active_sessions[sid]
+            print(f"Cleaned up empty session: {sid}")
+
+
+@app.on_event("startup")
+async def start_session_cleanup():
+    """Launch the cleanup loop as a background task so it doesn't block startup."""
+    asyncio.create_task(_session_cleanup_loop())
+
+
 @app.on_event("shutdown")
-def shutdown():
+async def shutdown():
+    """Close all WebSocket connections on shutdown."""
     for sid, session in active_sessions.items():
-        try:
-            for team in session.teams.values():
-                asyncio.create_task(team.socket.close())
-        except Exception:
-            pass
+        for team in session.teams.values():
+            try:
+                await team.socket.close()
+            except Exception:
+                pass
