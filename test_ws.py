@@ -34,7 +34,7 @@ async def run():
                 print(f"  {status}: {label}" + (f" -- {detail}" if detail else ""))
 
             # Start game
-            await ws.send(json.dumps({"type":"start","quiz_name":"Fun Night Quiz","host_name":"HostMC"}))
+            await ws.send(json.dumps({"type":"start","quiz_name":"General Knowledge","host_name":"HostMC"}))
             all_msgs = await recv_all(2.0)
             session_msgs = find_msgs(all_msgs, "session_started")
             print_test("session_started", len(session_msgs) > 0)
@@ -112,16 +112,25 @@ async def run():
                 print_test(f"Q{qnum} result", len(result_msgs) > 0)
                 print_test(f"Q{qnum} leaderboard", len(lb_msgs) > 0)
 
-            # Check final
+            # Check final - advance through remaining questions
             stands_msgs = []
-            start = asyncio.get_event_loop().time()
-            while (asyncio.get_event_loop().time() - start) < 3.0:
-                try:
-                    m = json.loads(await asyncio.wait_for(ws.recv(), timeout=1.0))
-                    if m.get("type") == "final_standings":
-                        stands_msgs.append(m)
-                except asyncio.TimeoutError:
-                    pass
+            # Advance past remaining questions (10 total - 5 played = 5 more to Q10, then 1 more to final)
+            for _ in range(6):  # 5 to get to Q10, 1 more to trigger final
+                await ws.send(json.dumps({"type":"next"}))
+                # Wait for go_to_question or final
+                while True:
+                    try:
+                        m = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
+                        if m.get("type") == "final_standings":
+                            stands_msgs.append(m)
+                            break
+                        if m.get("type") == "go_to_question":
+                            # Advance to next question
+                            break
+                    except asyncio.TimeoutError:
+                        break
+                if stands_msgs:
+                    break
 
             print_test("final_standings", len(stands_msgs) > 0)
             if stands_msgs:

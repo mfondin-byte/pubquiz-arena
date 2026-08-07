@@ -149,7 +149,7 @@ class GameSession:
         return q
 
     async def _collect_answers(self, timeout: int):
-        """Wait for all teams to answer, or timeout.
+        """Wait for all teams to answer, or timeout, or host clicks next.
         
         Timer is broadcast every 0.5s to reduce WebSocket flood.
         """
@@ -160,8 +160,19 @@ class GameSession:
         player_teams = {k: v for k, v in self.teams.items() if v.name != "Host"}
         total_players = len(player_teams)
 
-        while remaining > 0:
-            await asyncio.sleep(0.5)  # Reduced from 0.1s to reduce flood
+        while remaining > 0 and not self._stop_event.is_set():
+            # Wait 0.5s OR advance event, whichever comes first
+            try:
+                await asyncio.wait(
+                    [asyncio.create_task(asyncio.sleep(0.5)), asyncio.create_task(self._advance_event.wait())],
+                    return_when=asyncio.FIRST_COMPLETED
+                )
+                # If advance event was set, break out immediately
+                if self._advance_event.is_set():
+                    break
+            except asyncio.CancelledError:
+                break
+                
             elapsed = asyncio.get_running_loop().time() - self.question_start_time
             remaining = max(0, int(timeout - elapsed))
             await self.broadcast({"type": "timer", "seconds": remaining})
@@ -228,7 +239,6 @@ class GameSession:
 
         try:
             while self.current_question_idx < len(q_list):
-                self._advance_event.clear()
                 self._stop_event.clear()
                 self.result_sent = False
                 self.answers_collected = 0
@@ -241,7 +251,9 @@ class GameSession:
                 self.question_start_time = asyncio.get_running_loop().time()
 
                 # Wait for either timeout or all answered
+                print(f'DEBUG: Starting _collect_answers for Q{q["question_text"][:30]}...')
                 await self._collect_answers(q["timer_seconds"])
+                print(f'DEBUG: _collect_answers returned, current_idx={self.current_question_idx}')
 
                 # Advance to next question or final
                 self.current_question_idx += 1
@@ -253,9 +265,11 @@ class GameSession:
 
                 # Wait for host to click "Next"
                 await self._advance_event.wait()
-
+                # Clear the event now that we've acted on it
+                self._advance_event.clear()
                 # Broadcast next question
                 next_q = q_list[self.current_question_idx]
+                print(f'DEBUG: About to broadcast Q{next_q["question_text"][:30]}...')
                 await self.broadcast({
                     "type": "go_to_question",
                     "question_index": self.current_question_idx,
@@ -362,12 +376,15 @@ class GameSession:
         return totals
 
     async def _send_final(self):
+        print('DEBUG: _send_final called!')
         self.state = "final"
         await self.broadcast({"type": "final"})
 
         # Final standings
         totals = self._get_final_totals()
+        print(f'DEBUG: totals={totals}')
         standings = sorted(totals.items(), key=lambda x: -x[1])
+        print(f'DEBUG: standings={standings}')
 
         await self.broadcast({
             "type": "final_standings",
@@ -386,9 +403,14 @@ class GameSession:
     # ── Broadcasting ──────────────────────────────────────────────────────
 
     async def broadcast(self, message: dict):
+        """Broadcast a message to all unique sockets."""
         data = json.dumps(message)
+        seen_sockets = set()
         to_remove = []
         for name, team in self.teams.items():
+            if team.socket in seen_sockets:
+                continue  # Skip duplicate sockets
+            seen_sockets.add(team.socket)
             try:
                 await team.socket.send_text(data)
             except Exception:
@@ -754,6 +776,7 @@ async def websocket_game(websocket: WebSocket, session_id: str):
                         await websocket.send_json({"type": "error", "message": f"Failed to submit answer: {e}"})
 
             elif msg.get("type") == "next":
+                print(f'DEBUG: next received, setting _advance_event')
                 session._advance_event.set()
 
             elif msg.get("type") == "start2":

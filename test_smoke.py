@@ -62,10 +62,10 @@ try:
     print('6. Delete quiz: PASS')
 
     # 7. Ensure demo quiz exists
-    status, data = req('GET', '/api/quizzes/Fun%20Night%20Quiz')
+    status, data = req('GET', '/api/quizzes/General%20Knowledge')
     assert status == 200, f"Expected 200, got {status}"
-    assert len(data['questions']) == 5
-    print('7. Demo quiz exists with 5 questions: PASS')
+    assert len(data['questions']) == 10
+    print('7. Demo quiz exists with 10 questions: PASS')
 
     print('\nAll API tests PASSED')
 

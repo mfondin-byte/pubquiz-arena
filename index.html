@@ -576,6 +576,8 @@ $('#btn-submit-quiz').addEventListener('click', function(){
     $('#quiz-list').style.display = '';
     $('#admin-tabs').style.display = '';
     renderQuizList();
+    // Auto-open the newly created quiz so user can immediately add questions
+    openQuiz(name);
   }).catch(function(e){ alert('Error: ' + e.message); });
 });
 
@@ -786,7 +788,6 @@ $('#q-form-save').addEventListener('click', function(){
     data.media_key = mediaFileKey;
   }
   var url = API + '/api/quizzes/' + encodeURIComponent(adminSelectedQuiz) + '/questions';
-  // Always use POST for new questions editing old ones as well for simplicity
   fetch(url, {
     method: 'POST',
     headers:{'Content-Type':'application/json'},
@@ -795,6 +796,7 @@ $('#q-form-save').addEventListener('click', function(){
     if(!r.ok) throw new Error('Failed to save question');
     return r.json();
   }).then(function(){
+    // Reload questions
     return fetch(API + '/api/quizzes/' + encodeURIComponent(adminSelectedQuiz));
   }).then(function(r){ return r.json(); }).then(function(quiz){
     questions = quiz.questions || [];
