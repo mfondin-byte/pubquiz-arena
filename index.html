@@ -570,38 +570,54 @@ $('#btn-submit-quiz').addEventListener('click', function(){
   }).then(function(r){
     if(!r.ok) throw new Error('Failed to create quiz');
     return r.json();
-  }).then(function(){
+  }).then(function(data){
     $('#new-quiz-name').value = '';
     $('#create-quiz').style.display = 'none';
-    $('#quiz-list').style.display = '';
+    $('#quiz-list').style.display = 'none';
     $('#admin-tabs').style.display = '';
     renderQuizList();
     // Auto-open the newly created quiz so user can immediately add questions
-    openQuiz(name);
+    // Small delay to ensure the quiz file is persisted on disk
+    setTimeout(function(){ openQuiz(name); }, 300);
   }).catch(function(e){ alert('Error: ' + e.message); });
 });
 
 // ── Open Quiz ──
 function openQuiz(name){
+  if(!name){ console.error('openQuiz called with no name'); return; }
   adminSelectedQuiz = name;
-  fetch(API + '/api/quizzes/' + encodeURIComponent(name))
-    .then(function(r){ return r.json(); })
+  // Make sure editor tab is visible
+  $('#tab-editor').style.display = '';
+  // Switch to editor tab
+  $$('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+  $$('.tab-btn')[1].classList.add('active');
+  $$('.tab-content').forEach(function(c){ c.style.display = 'none'; });
+  $('#editor-panel').style.display = '';
+  $('#quiz-editor').style.display = '';
+  $('#no-quiz-selected').style.display = 'none';
+
+  function tryLoad(){
+    fetch(API + '/api/quizzes/' + encodeURIComponent(name))
+    .then(function(r){
+      if(!r.ok) throw new Error('Quiz not found: ' + r.status);
+      return r.json();
+    })
     .then(function(quiz){
       adminSelectedQuiz = quiz.name;
       $('#editor-quiz-name').textContent = quiz.name;
       $('#edit-max-teams').value = quiz.max_teams || 4;
       $('#edit-points-per-tick').value = quiz.points_per_tick || 4;
       $('#editor-quiz-info').textContent = 'Max teams: ' + (quiz.max_teams||4) + ' &middot; Points per tick: ' + (quiz.points_per_tick||4);
-      $('#tab-editor').style.display = '';
-      $$('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
-      $$('.tab-btn')[1].classList.add('active');
-      $$('.tab-content').forEach(function(c){ c.style.display = 'none'; });
-      $('#editor-panel').style.display = '';
       // Load questions from the quiz object
       questions = quiz.questions || [];
       renderQuestionList();
     })
-    .catch(function(e){ alert('Error loading quiz: ' + e.message); });
+    .catch(function(e){
+      console.error('Failed to load quiz:', e);
+      setTimeout(tryLoad, 1000);
+    });
+  }
+  tryLoad();
 }
 
 $('#btn-back-list').addEventListener('click', function(){
