@@ -1048,9 +1048,6 @@ $('#btn-host-start').addEventListener('click', function(){
 
     hostWs.onopen = function(){
       hostWs.send(JSON.stringify({type:'start', quiz_name: name, host_name: 'Host'}));
-      $('#host-setup').style.display = 'none';
-      $('#host-lobby').style.display = '';
-      $('#big-screen').classList.remove('active');
     };
     hostWs.onmessage = function(e){
       var msg = JSON.parse(e.data);
@@ -1488,7 +1485,25 @@ window.addEventListener('load', function(){
 
 function handlePlayerMessage(msg){
   switch(msg.type){
-    case 'teams_updated': break;
+    case 'joined':
+      playerState = 'waiting';
+      $('#player-join').style.display = 'none';
+      $('#player-screen').classList.add('active');
+      $('#ps-team-name').textContent = 'Team: ' + playerName;
+      $('#ps-waiting').style.display = '';
+      $('#ps-question-view').style.display = 'none';
+      $('#ps-result-view').style.display = 'none';
+      $('#ps-leaderboard').style.display = 'none';
+      $('#ps-final').style.display = 'none';
+      stopConfetti();
+      break;
+    case 'game_starting':
+      playerState = 'question';
+      $('#ps-waiting').style.display = 'none';
+      $('#ps-question-view').style.display = '';
+      break;
+    case 'teams_updated':
+      break;
     case 'go_to_question':
       playerState = 'question';
       currentQuestion = msg.question;

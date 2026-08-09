@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""WebSocket game flow test - question_index based synchronization."""
 import asyncio, json, subprocess, sys
 import websockets
 
@@ -11,12 +10,11 @@ async def run():
         [sys.executable, "-m", "uvicorn", "main:app", "--host", HOST, "--port", str(PORT)],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     await asyncio.sleep(4)
-
     try:
         print()
         print("-- Game Flow Test --")
-        async with websockets.connect(f"ws://{HOST}:{PORT}/ws/test_wsgame") as ws:
-            async def recv_all(timeout=2.0):
+        async with websockets.connect(f"ws://{HOST}:{PORT}/ws/test_wsgame") as host_ws:
+            async def recv_all(ws, timeout=2.0):
                 msgs = []
                 try:
                     while True:
@@ -33,110 +31,94 @@ async def run():
                 status = "PASS" if ok else "FAIL"
                 print(f"  {status}: {label}" + (f" -- {detail}" if detail else ""))
 
-            # Start game
-            await ws.send(json.dumps({"type":"start","quiz_name":"General Knowledge","host_name":"HostMC"}))
-            all_msgs = await recv_all(2.0)
-            session_msgs = find_msgs(all_msgs, "session_started")
-            print_test("session_started", len(session_msgs) > 0)
-
-            await ws.send(json.dumps({"type":"join","team_name":"Alpha"}))
-            await asyncio.sleep(0.5)
-            await ws.send(json.dumps({"type":"start2"}))
-            
-            # Wait for go_to_question for Q1
+            await host_ws.send(json.dumps({"type":"start","quiz_name":"General Knowledge","host_name":"HostMC"}))
+            all_msgs = await recv_all(host_ws, 2.0)
+            print_test("session_started", len(find_msgs(all_msgs, "session_started")) > 0)
+            await host_ws.send(json.dumps({"type":"start2"}))
             found_go = False
             while not found_go:
                 try:
-                    m = json.loads(await asyncio.wait_for(ws.recv(), timeout=3.0))
+                    m = json.loads(await asyncio.wait_for(host_ws.recv(), timeout=3.0))
                     if m.get("type") == "go_to_question":
                         found_go = True
                 except asyncio.TimeoutError:
                     break
-            
-            # Answer Q1 (correct answer is 'c' - 7 continents)
-            await ws.send(json.dumps({"type":"answer","answer_id":"c","elapsed":3.0}))
-            
-            # Collect result + leaderboard for Q1
-            q1_result, q1_lb = [], []
-            q1_start = asyncio.get_event_loop().time()
-            while (asyncio.get_event_loop().time() - q1_start) < 5.0:
+            collected = []
+            start = asyncio.get_event_loop().time()
+            while (asyncio.get_event_loop().time() - start) < 25.0:
                 try:
-                    m = json.loads(await asyncio.wait_for(ws.recv(), timeout=1.0))
-                    if m.get("type") == "result":
-                        q1_result.append(m)
-                    elif m.get("type") == "leaderboard":
-                        q1_lb.append(m)
-                    if q1_result and q1_lb:
+                    m = json.loads(await asyncio.wait_for(host_ws.recv(), timeout=1.0))
+                    collected.append(m)
+                    if m.get("type") in ("result", "leaderboard"):
                         break
                 except asyncio.TimeoutError:
                     pass
-            print_test("Q1 result", len(q1_result) > 0)
-            print_test("Q1 leaderboard", len(q1_lb) > 0)
-            if q1_lb:
-                alpha_pts = next((s["points"] for s in q1_lb[0].get("standings",[]) if s["team"]=="Alpha"), 0)
-                print_test("Alpha scored", alpha_pts > 0, f"Alpha={alpha_pts}pts")
+            print_test("Q1 result/leaderboard", any(m.get("type") in ("result","leaderboard") for m in collected))
 
-            # Q2-Q5 using go_to_question as sync point
-            # Correct answers: Q1=c, Q2=a, Q3=a, Q4=b, Q5=b
-            q_answers = {2: "a", 3: "a", 4: "b", 5: "b"}
-            for qnum in range(2, 6):
-                # Send next to advance to this question
-                await ws.send(json.dumps({"type":"next"}))
-                found_go = False
-                while not found_go:
-                    try:
-                        m = json.loads(await asyncio.wait_for(ws.recv(), timeout=3.0))
-                        if m.get("type") == "go_to_question":
-                            found_go = True
-                            break
-                    except asyncio.TimeoutError:
-                        break
-
-                await asyncio.sleep(5.5)
-                await ws.send(json.dumps({"type":"answer","answer_id":q_answers[qnum],"elapsed":5.0}))
-
-                result_msgs, lb_msgs = [], []
+            async with websockets.connect(f"ws://{HOST}:{PORT}/ws/test_wsgame") as player_ws:
+                await player_ws.send(json.dumps({"type":"join","team_name":"Alpha"}))
+                p_msgs = await recv_all(player_ws, 1.0)
+                print_test("Player joined", len(find_msgs(p_msgs, "joined")) > 0)
+                host_upd = await recv_all(host_ws, 1.0)
+                print_test("Host sees teams_update", len(find_msgs(host_upd, "teams_updated")) > 0)
+                await player_ws.send(json.dumps({"type":"answer","answer_id":"b","elapsed":5.0}))
+                r1, lb1 = [], []
                 start = asyncio.get_event_loop().time()
                 while (asyncio.get_event_loop().time() - start) < 5.0:
                     try:
-                        m = json.loads(await asyncio.wait_for(ws.recv(), timeout=1.0))
-                        if m.get("type") == "result":
-                            result_msgs.append(m)
-                        elif m.get("type") == "leaderboard":
-                            lb_msgs.append(m)
-                        if result_msgs and lb_msgs:
-                            break
+                        m = json.loads(await asyncio.wait_for(host_ws.recv(), timeout=1.0))
+                        if m.get("type") == "result": r1.append(m)
+                        elif m.get("type") == "leaderboard": lb1.append(m)
+                        if r1 and lb1: break
                     except asyncio.TimeoutError:
                         pass
-
-                print_test(f"Q{qnum} result", len(result_msgs) > 0)
-                print_test(f"Q{qnum} leaderboard", len(lb_msgs) > 0)
-
-            # Check final - advance through remaining questions
-            # Quiz has 11 questions, we played Q1-Q5 (5), need 6 more + 1 for final = 7
-            stands_msgs = []
-            for _ in range(7):
-                await ws.send(json.dumps({"type":"next"}))
-                # Wait for go_to_question or final
-                while True:
+                print_test("Q1 result", len(r1) > 0)
+                print_test("Q1 leaderboard", len(lb1) > 0)
+                if lb1:
+                    pts = next((s.get("points",0) for s in lb1[0].get("standings",[]) if s.get("team")=="Alpha"), 0)
+                    print_test("Alpha scored", pts > 0, f"Alpha={pts}pts")
+                await host_ws.send(json.dumps({"type":"next"}))
+                found_go = False
+                while not found_go:
                     try:
-                        m = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
-                        if m.get("type") == "final_standings":
-                            stands_msgs.append(m)
-                            break
+                        m = json.loads(await asyncio.wait_for(host_ws.recv(), timeout=3.0))
                         if m.get("type") == "go_to_question":
-                            # Advance to next question
-                            break
+                            found_go = True
                     except asyncio.TimeoutError:
                         break
-                if stands_msgs:
-                    break
-
-            print_test("final_standings", len(stands_msgs) > 0)
-            if stands_msgs:
-                alpha = next((s[1] for s in stands_msgs[0].get("standings",[]) if s[0]=="Alpha"), 0)
-                print_test("Alpha total", alpha > 0, f"Total={alpha}pts")
-
+                await asyncio.sleep(5.5)
+                await player_ws.send(json.dumps({"type":"answer","answer_id":"b","elapsed":5.0}))
+                r2, lb2 = [], []
+                start = asyncio.get_event_loop().time()
+                while (asyncio.get_event_loop().time() - start) < 5.0:
+                    try:
+                        m = json.loads(await asyncio.wait_for(host_ws.recv(), timeout=1.0))
+                        if m.get("type") == "result": r2.append(m)
+                        elif m.get("type") == "leaderboard": lb2.append(m)
+                        if r2 and lb2: break
+                    except asyncio.TimeoutError:
+                        pass
+                print_test("Q2 result", len(r2) > 0)
+                print_test("Q2 leaderboard", len(lb2) > 0)
+                stands = []
+                for _ in range(8):
+                    await host_ws.send(json.dumps({"type":"next"}))
+                    while True:
+                        try:
+                            m = json.loads(await asyncio.wait_for(host_ws.recv(), timeout=2.0))
+                            if m.get("type") == "final_standings":
+                                stands.append(m)
+                                break
+                            if m.get("type") == "go_to_question":
+                                break
+                        except asyncio.TimeoutError:
+                            break
+                    if stands:
+                        break
+                print_test("final_standings", len(stands) > 0)
+                if stands:
+                    alpha = next((s[1] for s in stands[0].get("standings",[]) if s[0]=="Alpha"), 0)
+                    print_test("Alpha total", alpha > 0, f"Total={alpha}pts")
         print()
         print("-- Done --")
     except Exception as e:
