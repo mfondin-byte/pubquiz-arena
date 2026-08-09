@@ -53,8 +53,8 @@ async def run():
                 except asyncio.TimeoutError:
                     break
             
-            # Answer Q1 (correct answer is 'b')
-            await ws.send(json.dumps({"type":"answer","answer_id":"b","elapsed":3.0}))
+            # Answer Q1 (correct answer is 'c' - 7 continents)
+            await ws.send(json.dumps({"type":"answer","answer_id":"c","elapsed":3.0}))
             
             # Collect result + leaderboard for Q1
             q1_result, q1_lb = [], []
@@ -77,6 +77,8 @@ async def run():
                 print_test("Alpha scored", alpha_pts > 0, f"Alpha={alpha_pts}pts")
 
             # Q2-Q5 using go_to_question as sync point
+            # Correct answers: Q1=c, Q2=a, Q3=a, Q4=b, Q5=b
+            q_answers = {2: "a", 3: "a", 4: "b", 5: "b"}
             for qnum in range(2, 6):
                 # Send next to advance to this question
                 await ws.send(json.dumps({"type":"next"}))
@@ -91,9 +93,7 @@ async def run():
                         break
 
                 await asyncio.sleep(5.5)
-
-                ans = "c" if qnum == 2 else "b"
-                await ws.send(json.dumps({"type":"answer","answer_id":ans,"elapsed":5.0}))
+                await ws.send(json.dumps({"type":"answer","answer_id":q_answers[qnum],"elapsed":5.0}))
 
                 result_msgs, lb_msgs = [], []
                 start = asyncio.get_event_loop().time()
@@ -113,9 +113,9 @@ async def run():
                 print_test(f"Q{qnum} leaderboard", len(lb_msgs) > 0)
 
             # Check final - advance through remaining questions
+            # Quiz has 11 questions, we played Q1-Q5 (5), need 6 more + 1 for final = 7
             stands_msgs = []
-            # Advance past remaining questions (10 total - 5 played = 5 more to Q10, then 1 more to final)
-            for _ in range(6):  # 5 to get to Q10, 1 more to trigger final
+            for _ in range(7):
                 await ws.send(json.dumps({"type":"next"}))
                 # Wait for go_to_question or final
                 while True:

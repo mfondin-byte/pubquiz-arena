@@ -248,7 +248,7 @@ h3{font-size:1.2rem;margin-bottom:10px}
   <div class="container">
     <div class="nav-row">
       <h2>PubQuiz Admin</h2>
-      <button class="btn btn-secondary btn-small" data-go="admin">&#9829; Admin</button>
+      <button class="btn btn-secondary btn-small" id="btn-go-hero">&#10003; Done</button>
     </div>
     <div class="tabs" id="admin-tabs">
       <button class="tab-btn active" data-tab="quiz-list">Quiz List</button>
@@ -286,7 +286,7 @@ h3{font-size:1.2rem;margin-bottom:10px}
           </div>
           <div style="display:flex;gap:8px">
             <button class="btn btn-secondary btn-small" id="btn-back-list">&#8592; Back</button>
-            <a class="btn btn-secondary btn-small" id="btn-host-quiz" style="text-decoration:none;color:var(--text)">&#9654; Host (separate tab)</a>
+            <button class="btn btn-secondary btn-small" id="btn-host-quiz" style="text-decoration:none;color:var(--text)">&#9654; Host</button>
           </div>
         </div>
         <div class="card">
@@ -368,8 +368,11 @@ h3{font-size:1.2rem;margin-bottom:10px}
   <div class="container" id="host-lobby" style="display:none; text-align:center;">
     <div class="card">
       <h2>&#127919; Game Ready!</h2>
-      <p id="host-waiting-msg" style="margin:16px 0; font-size:1.1rem;">Scanning for players&#8230;</p>
-      <div class="teams-display" id="host-teams-list" style="margin:16px 0;"></div>
+      <p id="host-waiting-msg" style="margin:16px 0; font-size:1.1rem;">Waiting for players to join...</p>
+      <div class="teams-display" id="host-teams-list" style="margin:16px 0; font-size:1.1rem; min-height:30px;"></div>
+      <p style="color:var(--text2); margin-bottom:16px;">
+        <span id="host-team-count">0</span> team(s) connected
+      </p>
       <div style="margin:16px 0;">
         <label><strong>Session Code:</strong></label>
         <span id="host-session-id" style="font-size:1.2rem;color:var(--accent);"></span>
@@ -489,6 +492,9 @@ function showView(name){
 $$('[data-go]').forEach(function(btn){
   btn.addEventListener('click', function(){ navigate(btn.dataset.go); });
 });
+
+$('#btn-go-hero').addEventListener('click', function(){ navigate('hero'); });
+
 window.addEventListener('hashchange', function(){
   var h = location.hash.replace('#','');
   showView(h || 'hero');
@@ -536,7 +542,7 @@ function renderQuizList(){
     grid.innerHTML = quizzes.map(function(q){
       return '<div class="quiz-card" data-name="'+q.name+'">'
         + '<h3>'+esc(q.name)+'</h3>'
-        + '<div class="meta">'+(q.question_count||0)+' questions &middot; Max '+ (q.max_teams||4)+' teams &middot; '
+        + '<div class="meta">'+(q.question_count||0)+' questions  ·  Max '+ (q.max_teams||4)+' teams  ·  '
         + (q.points_per_tick||4)+' pts/tick</div></div>';
     }).join('');
     grid.querySelectorAll('.quiz-card').forEach(function(card){
@@ -607,7 +613,7 @@ function openQuiz(name){
       $('#editor-quiz-name').textContent = quiz.name;
       $('#edit-max-teams').value = quiz.max_teams || 4;
       $('#edit-points-per-tick').value = quiz.points_per_tick || 4;
-      $('#editor-quiz-info').textContent = 'Max teams: ' + (quiz.max_teams||4) + ' &middot; Points per tick: ' + (quiz.points_per_tick||4);
+      $('#editor-quiz-info').textContent = 'Max teams: ' + (quiz.max_teams||4) + '  ·  Points per tick: ' + (quiz.points_per_tick||4);
       // Load questions from the quiz object
       questions = quiz.questions || [];
       renderQuestionList();
@@ -642,10 +648,19 @@ $('#btn-save-settings').addEventListener('click', function(){
   }).then(function(r){ return r.json(); })
     .then(function(d){
       var quiz = d.quiz || d;
-      $('#editor-quiz-info').textContent = 'Max teams: ' + (quiz.max_teams||4) + ' &middot; Points per tick: ' + (quiz.points_per_tick||4);
+      $('#editor-quiz-info').textContent = 'Max teams: ' + (quiz.max_teams||4) + '  ·  Points per tick: ' + (quiz.points_per_tick||4);
       alert('Settings saved!');
     })
     .catch(function(e){ alert('Error saving: ' + e.message); });
+});
+
+// ── Host from Editor ──
+$('#btn-host-quiz').addEventListener('click', function(){
+  if(!adminSelectedQuiz){ alert('Select a quiz first'); return; }
+  // Pre-select the quiz in the host view
+  var sel = $('#host-quiz-select');
+  if(sel){ sel.value = adminSelectedQuiz; }
+  navigate('host');
 });
 
 // ── Question List ──
@@ -664,7 +679,7 @@ function renderQuestionList(){
       + '<span class="q-type '+typeClass+'">'+(q.question_type||'text')+'</span>'
       + '<div class="q-actions">'
       + '<button class="up" title="Move up" data-action="up" data-index="'+i+'">&#8593;</button>'
-      + '<button class="down" title="Move down" data-action="drag" data-index="'+i+'">&#8595;</button>'
+      + '<button class="down" title="Move down" data-action="down" data-index="'+i+'">&#8595;</button>'
       + '<button class="del" title="Delete" data-action="delete" data-index="'+i+'">&#10005;</button>'
       + '</div></li>';
   }).join('');
@@ -919,6 +934,10 @@ function updateHostTeams(teams){
   if(el){
     el.innerHTML = teams.map(function(t){ return '<span class="team-tag">'+esc(t)+'</span>'; }).join(' ');
   }
+  var countEl = $('#host-team-count');
+  if(countEl){
+    countEl.textContent = teams.length;
+  }
 }
 
 function handleAdminMessage(msg){
@@ -1000,7 +1019,7 @@ $('#host-quiz-select').addEventListener('change', function(){
   var info = $('#host-info');
   if(!name){ info.textContent=''; return; }
   fetch(API + '/api/quizzes/' + encodeURIComponent(name)).then(function(r){ return r.json(); }).then(function(quiz){
-    info.textContent = (quiz.questions||[]).length + ' questions &middot; Ready to start!';
+    info.textContent = (quiz.questions||[]).length + ' questions  ·  Ready to start!';
   }).catch(function(){ info.textContent='Error loading quiz'; });
 });
 
@@ -1039,23 +1058,33 @@ $('#btn-host-start').addEventListener('click', function(){
 });
 
 $('#btn-start-round').addEventListener('click', function(){
-  // If we have a host WebSocket, send start2
+  // If we already have a WebSocket, send start2
   if(hostWs){
     hostWs.send(JSON.stringify({type:'start2'}));
     hostState = 'question';
-  } else if(adminSessionWs){
-    adminSessionWs.send(JSON.stringify({type:'start2'}));
-    // Also switch to big screen
-    $('#host-lobby').style.display = 'none';
-    $('#big-screen').classList.add('active');
-    hostState = 'question';
-  } else {
-    // Fallback: start via admin session
-    startGameSession();
-    $('#host-lobby').style.display = 'none';
-    $('#big-screen').classList.add('active');
-    hostState = 'question';
+    return;
   }
+  if(adminSessionWs){
+    adminSessionWs.send(JSON.stringify({type:'start2'}));
+    $('#host-lobby').style.display = 'none';
+    $('#big-screen').classList.add('active');
+    hostState = 'question';
+    return;
+  }
+  // No WebSocket yet: start a new session (works even with 0 players)
+  if(!adminSelectedQuiz){ alert('Select a quiz first'); return; }
+
+  var sessionId = 'qz_' + Math.random().toString(36).substring(2,10);
+  var scheme = location.protocol==='https:'?'wss:':'ws:';
+  hostWs = new WebSocket(scheme + '//' + location.host + '/ws/' + sessionId);
+  hostWs.onopen = function(){
+    hostWs.send(JSON.stringify({type:'start', quiz_name: adminSelectedQuiz, host_name: 'Host'}));
+  };
+  hostWs.onmessage = function(e){
+    var msg = JSON.parse(e.data);
+    handleHostMessage(msg);
+  };
+  hostWs.onclose = function(){ hostWs = null; hostResetUI(); };
 });
 
 $('#btn-end-session').addEventListener('click', function(){

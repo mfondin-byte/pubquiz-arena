@@ -251,9 +251,9 @@ class GameSession:
                 self.question_start_time = asyncio.get_running_loop().time()
 
                 # Wait for either timeout or all answered
-                print(f'DEBUG: Starting _collect_answers for Q{q["question_text"][:30]}...')
+                pass
                 await self._collect_answers(q["timer_seconds"])
-                print(f'DEBUG: _collect_answers returned, current_idx={self.current_question_idx}')
+                pass
 
                 # Advance to next question or final
                 self.current_question_idx += 1
@@ -269,7 +269,7 @@ class GameSession:
                 self._advance_event.clear()
                 # Broadcast next question
                 next_q = q_list[self.current_question_idx]
-                print(f'DEBUG: About to broadcast Q{next_q["question_text"][:30]}...')
+                pass
                 await self.broadcast({
                     "type": "go_to_question",
                     "question_index": self.current_question_idx,
@@ -376,15 +376,15 @@ class GameSession:
         return totals
 
     async def _send_final(self):
-        print('DEBUG: _send_final called!')
+        pass
         self.state = "final"
         await self.broadcast({"type": "final"})
 
         # Final standings
         totals = self._get_final_totals()
-        print(f'DEBUG: totals={totals}')
+        pass
         standings = sorted(totals.items(), key=lambda x: -x[1])
-        print(f'DEBUG: standings={standings}')
+        pass
 
         await self.broadcast({
             "type": "final_standings",
@@ -776,7 +776,7 @@ async def websocket_game(websocket: WebSocket, session_id: str):
                         await websocket.send_json({"type": "error", "message": f"Failed to submit answer: {e}"})
 
             elif msg.get("type") == "next":
-                print(f'DEBUG: next received, setting _advance_event')
+                pass
                 session._advance_event.set()
 
             elif msg.get("type") == "start2":
