@@ -724,6 +724,8 @@ async def websocket_game(websocket: WebSocket, session_id: str):
                     continue
 
                 session = GameSession(quiz)
+                # Use the connection key as the session ID so player can connect to /ws/{session_id}
+                session.session_id = session_id
                 session.teams[session_id] = TeamInfo(
                     socket=websocket, name="Host",
                     connected_since=asyncio.get_running_loop().time()
