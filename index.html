@@ -998,9 +998,15 @@ var timerInterval = null;
 var countdownSeconds = 0;
 
 function hostInit(){
+  // Always show setup first
+  $('#host-setup').style.display = '';
+  $('#host-lobby').style.display = 'none';
+  $('#big-screen').classList.remove('active');
+
   loadQuizSelect();
   if(hostWs){ hostWs.close(); hostWs = null; }
   hostResetUI();
+  hostState = 'idle';
 }
 
 function loadQuizSelect(){
@@ -1025,40 +1031,41 @@ $('#host-quiz-select').addEventListener('change', function(){
 
 // ── Host: Start Quiz button ──
 $('#btn-host-start').addEventListener('click', function(){
-  if(!adminSessionWs && !hostWs){
-    adminSessionWs = null;
-    var name = $('#host-quiz-select').value;
-    if(!name){ alert('Select a quiz'); return; }
-    fetch(API + '/api/quizzes/' + encodeURIComponent(name)).then(function(r){ return r.json(); }).then(function(quiz){
-      if(!quiz.questions || quiz.questions.length === 0){ alert('No questions in this quiz'); return; }
-      var sessionId = 'qz_' + Math.random().toString(36).substring(2,10);
-      var scheme = location.protocol==='https:'?'wss:':'ws:';
-      hostWs = new WebSocket(scheme + '//' + location.host + '/ws/' + sessionId);
-      hostWs.onopen = function(){
-        hostState = 'connected';
-        $('#host-setup').style.display = 'none';
-        $('#host-lobby').style.display = '';
-        $('#big-screen').classList.remove('active');
-        hostWs.send(JSON.stringify({type:'start', quiz_name: name, host_name: 'Host'}));
-      };
-      hostWs.onmessage = function(e){
-        var msg = JSON.parse(e.data);
-        handleHostMessage(msg);
-      };
-      hostWs.onclose = function(){
-        hostWs = null;
-        hostState = 'ended';
-      };
-      hostQuizName = name;
-    }).catch(function(e){ alert('Error: ' + e.message); });
-  } else {
-    // Already have admin session — reuse it as host
+  if(hostWs || adminSessionWs){
+    // Already running — reuse existing
     startGameSession();
+    return;
   }
+  var name = $('#host-quiz-select').value;
+  if(!name){ alert('Select a quiz'); return; }
+
+  fetch(API + '/api/quizzes/' + encodeURIComponent(name)).then(function(r){ return r.json(); }).then(function(quiz){
+    if(!quiz.questions || quiz.questions.length === 0){ alert('No questions in this quiz'); return; }
+    var sessionId = 'qz_' + Math.random().toString(36).substring(2,10);
+    var scheme = location.protocol==='https:'?'wss:':'ws:';
+    hostWs = new WebSocket(scheme + '//' + location.host + '/ws/' + sessionId);
+    hostState = 'connecting';
+
+    hostWs.onopen = function(){
+      hostWs.send(JSON.stringify({type:'start', quiz_name: name, host_name: 'Host'}));
+      $('#host-setup').style.display = 'none';
+      $('#host-lobby').style.display = '';
+      $('#big-screen').classList.remove('active');
+    };
+    hostWs.onmessage = function(e){
+      var msg = JSON.parse(e.data);
+      handleHostMessage(msg);
+    };
+    hostWs.onclose = function(){
+      hostWs = null;
+      hostState = 'ended';
+    };
+    hostQuizName = name;
+  }).catch(function(e){ alert('Error: ' + e.message); });
 });
 
 $('#btn-start-round').addEventListener('click', function(){
-  // If we already have a WebSocket, send start2
+  // If we already have a host WebSocket, send start2
   if(hostWs){
     hostWs.send(JSON.stringify({type:'start2'}));
     hostState = 'question';
@@ -1071,12 +1078,14 @@ $('#btn-start-round').addEventListener('click', function(){
     hostState = 'question';
     return;
   }
-  // No WebSocket yet: start a new session (works even with 0 players)
+  // No WebSocket yet: create a new session (works even with 0 players)
   if(!adminSelectedQuiz){ alert('Select a quiz first'); return; }
 
   var sessionId = 'qz_' + Math.random().toString(36).substring(2,10);
   var scheme = location.protocol==='https:'?'wss:':'ws:';
   hostWs = new WebSocket(scheme + '//' + location.host + '/ws/' + sessionId);
+  hostState = 'connecting';
+
   hostWs.onopen = function(){
     hostWs.send(JSON.stringify({type:'start', quiz_name: adminSelectedQuiz, host_name: 'Host'}));
   };
@@ -1084,7 +1093,10 @@ $('#btn-start-round').addEventListener('click', function(){
     var msg = JSON.parse(e.data);
     handleHostMessage(msg);
   };
-  hostWs.onclose = function(){ hostWs = null; hostResetUI(); };
+  hostWs.onclose = function(){
+    hostWs = null;
+    hostResetUI();
+  };
 });
 
 $('#btn-end-session').addEventListener('click', function(){
@@ -1097,6 +1109,9 @@ function hostResetUI(){
   $('#big-screen').classList.remove('active');
   $('#host-setup').style.display = '';
   $('#host-lobby').style.display = 'none';
+  $('#host-waiting-msg').textContent = 'Waiting for players to join...';
+  $('#host-teams-list').innerHTML = '';
+  $('#host-team-count').textContent = '0';
   clearInterval(timerInterval);
   hostState = 'idle';
   hostQuizName = '';
@@ -1112,7 +1127,11 @@ function handleHostMessage(msg){
       var qrUrl = location.origin + '/#/player?session=' + msg.session_id;
       $('#host-qr-img').src = API + '/api/qr?url=' + encodeURIComponent(qrUrl);
       $('#host-qr-img').style.display = '';
-      $('#host-waiting-msg').textContent = 'Waiting for players... (session: ' + msg.session_id + ')';
+      $('#host-setup').style.display = 'none';
+      $('#host-lobby').style.display = '';
+      $('#big-screen').classList.remove('active');
+      $('#host-waiting-msg').textContent = 'Waiting for players to join...';
+      updateHostTeams([]);
       hostState = 'waiting_players';
       break;
     case 'game_starting':
@@ -1124,12 +1143,19 @@ function handleHostMessage(msg){
       var qrFromServer = msg.url || (location.origin + '/#/player?session='+(hostSessionId||''));
       $('#host-qr-img').src = API + '/api/qr?url=' + encodeURIComponent(qrFromServer);
       $('#host-qr-img').style.display = '';
-      updateHostTeams(msg.teams);
-      $('#host-waiting-msg').textContent = (msg.count||0)+'/'+(msg.max||'')+' teams connected. Click "Start Round"!';
-      // Don't auto-disable: wait for round to start
+      // Count players only (exclude host from count)
+      var playerCount = (msg.count||0) - 1;
+      if(playerCount < 0) playerCount = 0;
+      var playerNames = (msg.teams||[]).filter(function(t){ return t !== 'Host'; });
+      updateHostTeams(playerNames);
+      $('#host-waiting-msg').textContent = playerNames.length > 0
+        ? 'Players connected — Click "Start Round"!'
+        : 'Waiting for players to join...';
       break;
     case 'teams_updated':
-      updateHostTeams(msg.teams);
+      // Filter out host from display
+      var playerTeams = msg.teams || [];
+      updateHostTeams(playerTeams.filter(function(t){ return t !== 'Host'; }));
       break;
     case 'go_to_question':
       hostState = 'question';
