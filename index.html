@@ -805,7 +805,7 @@ $('#q-form-cancel').addEventListener('click', function(){ $('#q-form-overlay').s
 $('#q-form-save').addEventListener('click', function(){
   var ans = [$('#q-ans-0').value,$('#q-ans-1').value,$('#q-ans-2').value,$('#q-ans-3').value].filter(function(a){ return a.trim(); });
   if(!ans.length){ alert('Enter at least one answer'); return; }
-  if(ans.length < 2){ alert('Need at least 2 options'); return; }
+  if(ans.length < 1){ alert('Need at least 1 option'); return; }
   var correct = $('input[name=correctAns]:checked').value;
   var data = {
     question_type: $('#q-type').value,
