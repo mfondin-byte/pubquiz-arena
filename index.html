@@ -149,7 +149,8 @@ h3{font-size:1.2rem;margin-bottom:10px}
 .lb-entry .lb-pos{font-size:1.3rem;font-weight:900;color:var(--accent);min-width:40px;text-align:center}
 .lb-entry .lb-team{flex:1;font-weight:600;text-align:left}
 .lb-entry .lb-score{font-size:1.2rem;font-weight:700;color:var(--green)}
-.lb-entry.lb-first{border-color:var(--accent);background:linear-gradient(135deg,rgba(245,166,35,.15),rgba(0,210,255,.1))}
+.lb-entry.lb-first .lb-team::before{content:'🔥 '}
+.lb-entry.lb-first .lb-team::after{content:' 🔥'}
 
 /* ── Host: Final ── */
 .hs-final{text-align:center}
@@ -198,6 +199,20 @@ h3{font-size:1.2rem;margin-bottom:10px}
 .podium-container{display:flex;align-items:flex-end;justify-content:center;gap:12px;margin:30px auto;max-width:500px}
 .podium-place{text-align:center;flex:1}
 .podium-place.first{order:2}
+
+/* ── Emoji Effects ── */
+.emoji-effect{position:fixed;font-size:3rem;pointer-events:none;z-index:10000}
+.emoji-skull{animation:skullDrop 3s ease-in forwards}
+.emoji-bored{animation:boredFloat 4s ease-in-out forwards}
+@keyframes skullDrop{
+  0%{transform:translateY(-100px) rotate(0deg);opacity:1}
+  100%{transform:translateY(100vh) rotate(360deg);opacity:0}
+}
+@keyframes boredFloat{
+  0%{transform:translateY(0) scale(1);opacity:0.8}
+  50%{transform:translateY(-30px) scale(1.2);opacity:1}
+  100%{transform:translateY(0) scale(1);opacity:0.8}
+}
 .podium-place.second{order:1}
 .podium-place.third{order:3}
 .podium-medal{font-size:3rem;margin-bottom:6px}
@@ -212,6 +227,31 @@ h3{font-size:1.2rem;margin-bottom:10px}
 
 /* ── Confetti ── */
 #confetti-canvas{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:9999}
+
+/* ── Big Screen (Host/Admin) ── */
+.big-screen{display:none;flex-direction:column;align-items:center;width:100%;height:100vh;overflow-y:auto;padding:30px 20px;background:var(--bg)}
+.big-screen.active{display:flex}
+.hs-question{font-size:2rem;font-weight:700;color:var(--text);margin:20px 0;text-align:center;max-width:800px;line-height:1.4}
+.hs-options{display:grid;grid-template-columns:1fr 1fr;gap:12px;width:100%;max-width:800px;margin:20px 0}
+.hs-opt{background:var(--bg3);color:var(--text);padding:20px;border-radius:12px;font-size:1.1rem;font-weight:600;text-align:center;cursor:default;border:2px solid transparent;transition:border-color .2s}
+.hs-opt.hs-opt-0{border-color:#e05d44}
+.hs-opt.hs-opt-1{border-color:#2d8fe5}
+.hs-opt.hs-opt-2{border-color:#e5a62d}
+.hs-opt.hs-opt-3{border-color:#44b86a}
+.hs-media{margin-bottom:20px;max-width:100%}
+.hs-media img{max-width:100%;max-height:300px;border-radius:12px}
+.hs-timer-bar{width:100%;max-width:800px;height:8px;background:var(--bg3);border-radius:4px;margin-bottom:20px;overflow:hidden}
+.hs-timer-fill{height:100%;background:var(--green);transition:width .5s linear,background .3s}
+.hs-results{text-align:center;margin-top:40px}
+.result-icon{font-size:4rem;margin-bottom:16px}
+.hs-leaderboard{text-align:center;width:100%;max-width:600px;margin-top:30px}
+.lb-entries{display:flex;flex-direction:column;gap:8px;margin-top:16px}
+.lb-entry{display:flex;justify-content:space-between;align-items:center;background:var(--bg3);padding:12px 16px;border-radius:8px;color:var(--text)}
+.lb-pos{font-weight:700;width:40px}
+.lb-team{flex:1;text-align:left}
+.lb-score{font-weight:700;color:var(--accent)}
+.hs-final{text-align:center;margin-top:40px}
+.trophy{font-size:5rem;margin-bottom:16px}
 
 /* ── Misc ── */
 .mt-10{margin-top:10px}.mt-16{margin-top:16px}.mb-10{margin-bottom:10px}
@@ -353,6 +393,38 @@ h3{font-size:1.2rem;margin-bottom:10px}
         <button class="btn btn-success" id="q-form-save">Save Question</button>
       </div>
     </div>
+
+    <!-- Admin Big Screen (same as host) -->
+    <div class="big-screen" id="admin-big-screen">
+      <div class="hs-timer-bar"><div class="hs-timer-fill" id="admin-timer-fill"></div></div>
+      <div id="admin-question-view">
+        <div class="hs-media" id="admin-media"></div>
+        <div class="hs-question" id="admin-question-text"></div>
+        <div class="hs-options" id="admin-options"></div>
+      </div>
+      <div id="admin-result-view" class="hs-results" style="display:none">
+        <div class="result-icon" id="admin-result-icon"></div>
+        <div class="points" id="admin-result-points"></div>
+        <div class="correct-answer" id="admin-correct-text"></div>
+      </div>
+      <div id="admin-leaderboard-view" class="hs-leaderboard" style="display:none">
+        <h2>Leaderboard</h2>
+        <div class="lb-entries" id="admin-lb-entries"></div>
+      </div>
+      <div id="admin-final-view" class="hs-final" style="display:none">
+        <div class="trophy">&#127942;</div>
+        <h1>Game Over!</h1>
+        <div class="podium-container" id="admin-podium"></div>
+        <div class="lb-entries" id="admin-final-entries" style="margin-top:20px"></div>
+      </div>
+    </div>
+
+    <!-- Admin Control Bar -->
+    <div id="admin-controls" style="display:none;position:fixed;bottom:0;left:0;right:0;background:rgba(0,0,0,0.88);padding:10px 20px;justify-content:center;gap:12px;flex-wrap:wrap;z-index:9999;border-top:2px solid var(--accent)">
+      <button class="btn btn-primary" id="admin-next-q" style="padding:8px 22px;font-size:1rem">Next &#8594;</button>
+      <button class="btn btn-warning" id="admin-show-lb" style="padding:8px 22px;font-size:1rem">&#127942; Leaderboard</button>
+      <button class="btn btn-danger" id="admin-end" style="padding:8px 22px;font-size:1rem">End Game</button>
+    </div>
   </div>
 </div>
 
@@ -384,7 +456,7 @@ h3{font-size:1.2rem;margin-bottom:10px}
       <button class="btn btn-danger mt-16" id="btn-end-session">End Session</button>
     </div>
   </div>
-  <div class="big-screen" id="big-screen" style="display:none;">
+  <div class="big-screen" id="big-screen">
     <div class="hs-timer-bar"><div class="hs-timer-fill" id="hs-timer-fill"></div></div>
     <div id="hs-question-view">
       <div class="hs-media" id="hs-media"></div>
@@ -399,7 +471,6 @@ h3{font-size:1.2rem;margin-bottom:10px}
     <div id="hs-leaderboard-view" class="hs-leaderboard" style="display:none">
       <h2>Leaderboard</h2>
       <div class="lb-entries" id="hs-lb-entries"></div>
-      <div class="hs-timer-bar" style="margin-top:20px"><div class="hs-timer-fill" id="hs-lb-timer-fill"></div></div>
     </div>
     <div id="hs-final-view" class="hs-final" style="display:none">
       <div class="trophy">&#127942;</div>
@@ -410,6 +481,7 @@ h3{font-size:1.2rem;margin-bottom:10px}
       <button class="btn btn-secondary mt-10" id="btn-host-new-quiz" style="margin-top:10px">New Quiz</button>
     </div>
   </div>
+  <div id="hs-controls" style="display:none;position:fixed;bottom:0;left:0;right:0;background:rgba(0,0,0,0.88);padding:10px 20px;justify-content:center;gap:12px;flex-wrap:wrap;z-index:9999;border-top:2px solid var(--accent)"><button class="btn btn-primary" id="btn-host-next-q" style="padding:8px 22px;font-size:1rem">Next &#8594;</button><button class="btn btn-warning" id="btn-host-show-lb" style="padding:8px 22px;font-size:1rem">&#127942; Leaderboard</button><button class="btn btn-danger" id="btn-host-end" style="padding:8px 22px;font-size:1rem">End Game</button></div>
 </div>
 
 <!-- ═══════════ PLAYER ═══════════ -->
@@ -451,7 +523,7 @@ h3{font-size:1.2rem;margin-bottom:10px}
     </div>
     <div id="ps-final" style="display:none;text-align:center;padding:40px 0">
       <div style="font-size:3rem;margin-bottom:16px">🎉</div>
-      <p class="text-center" style="font-size:1.2rem;color:var(--text2)">The game is over!</p>
+      <p id="ps-final-message" class="text-center" style="font-size:1.2rem;color:var(--text2)">The game is over!</p>
       <div id="ps-final-standings" style="display:flex;flex-direction:column;align-items:center;gap:6px;margin-top:16px"></div>
     </div>
   </div>
@@ -513,6 +585,9 @@ function adminInit(){
   adminSetupTabs();
   renderQuizList();
   $('#instructor-panel').style.display = 'none';
+  $('#admin-big-screen').classList.remove('active');
+  $('#admin-controls').style.display = 'none';
+  clearInterval(adminTimerInterval);
   adminSessionId = null;
   if(adminSessionWs){ adminSessionWs.close(); adminSessionWs = null; }
 }
@@ -520,6 +595,11 @@ function adminInit(){
 function adminSetupTabs(){
   $$('.tab-btn').forEach(function(t){
     t.addEventListener('click', function(){
+      // Clean up game UI when switching tabs
+      $('#admin-big-screen').classList.remove('active');
+      $('#admin-controls').style.display = 'none';
+      clearInterval(adminTimerInterval);
+      // Reset tab selection
       $$('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
       t.classList.add('active');
       $$('.tab-content').forEach(function(c){ c.style.display = 'none'; });
@@ -873,10 +953,18 @@ function handleMediaFile(file){
 
 // ── Instructor Panel (WebSocket) ──
 $('#btn-start-game').addEventListener('click', startGameSession);
-$('#btn-next-question').addEventListener('click', function(){
+$('#btn-end-game').addEventListener('click', function(){
+  if(adminSessionWs) adminSessionWs.send(JSON.stringify({type:'end'}));
+});
+
+// Admin control bar buttons (big-screen)
+$('#admin-next-q').addEventListener('click', function(){
   if(adminSessionWs) adminSessionWs.send(JSON.stringify({type:'next'}));
 });
-$('#btn-end-game').addEventListener('click', function(){
+$('#admin-show-lb').addEventListener('click', function(){
+  if(adminSessionWs) adminSessionWs.send(JSON.stringify({type:'leaderboard'}));
+});
+$('#admin-end').addEventListener('click', function(){
   if(adminSessionWs) adminSessionWs.send(JSON.stringify({type:'end'}));
 });
 
@@ -926,13 +1014,13 @@ function updateQR(url){
 
 function updateTeams(teams){
   var list = $('#ip-teams');
-  list.innerHTML = teams.map(function(t){ return '<span class="team-tag">'+esc(t)+'</span>'; }).join('');
+  list.innerHTML = teams.map(function(t){ return '<span class="team-tag">'+esc(t.name)+'</span>'; }).join('');
 }
 
 function updateHostTeams(teams){
   var el = $('#host-teams-list');
   if(el){
-    el.innerHTML = teams.map(function(t){ return '<span class="team-tag">'+esc(t)+'</span>'; }).join(' ');
+    el.innerHTML = teams.map(function(t){ return '<span class="team-tag">'+esc(t.name)+'</span>'; }).join(' ');
   }
   var countEl = $('#host-team-count');
   if(countEl){
@@ -957,28 +1045,68 @@ function handleAdminMessage(msg){
       updateTeams(msg.teams);
       break;
     case 'go_to_question':
-      updateInstructorUI('question');
+      showAdminBigScreen();
+      showAdminQuestion(msg);
+      $('#admin-question-view').style.display = '';
+      $('#admin-result-view').style.display = 'none';
+      $('#admin-leaderboard-view').style.display = 'none';
+      $('#admin-final-view').style.display = 'none';
+      $('#admin-controls').style.display = 'flex';
+      $('#admin-next-q').style.display = 'none';
+      $('#admin-show-lb').style.display = 'none';
+      $('#admin-end').style.display = 'block';
+      clearInterval(adminTimerInterval);
       break;
     case 'question':
-      updateInstructorUI('question');
+      showAdminQuestion(msg);
       break;
     case 'timer':
-      updateInstructorUI('question');
+      updateAdminTimer(msg.seconds);
       break;
     case 'result':
-      updateInstructorUI('result');
+      clearInterval(adminTimerInterval);
+      showAdminBigScreen();
+      showAdminResult(msg);
+      $('#admin-question-view').style.display = 'none';
+      $('#admin-result-view').style.display = '';
+      $('#admin-leaderboard-view').style.display = 'none';
+      $('#admin-final-view').style.display = 'none';
+      $('#admin-controls').style.display = 'flex';
+      $('#admin-next-q').style.display = 'block';
+      $('#admin-show-lb').style.display = 'block';
+      $('#admin-end').style.display = 'block';
       break;
     case 'leaderboard':
-      updateInstructorUI('result');
+      clearInterval(adminTimerInterval);
+      showAdminBigScreen();
+      showAdminLeaderboard(msg);
+      $('#admin-question-view').style.display = 'none';
+      $('#admin-result-view').style.display = 'none';
+      $('#admin-leaderboard-view').style.display = '';
+      $('#admin-final-view').style.display = 'none';
+      $('#admin-controls').style.display = 'flex';
+      $('#admin-next-q').style.display = 'block';
+      $('#admin-show-lb').style.display = 'none';
+      $('#admin-end').style.display = 'block';
       break;
     case 'final':
-      updateInstructorUI('final');
+      // Just clear timer, wait for final_standings
+      clearInterval(adminTimerInterval);
       break;
     case 'final_standings':
-      updateInstructorUI('final');
+      clearInterval(adminTimerInterval);
+      showAdminBigScreen();
+      showAdminFinal(msg);
+      $('#admin-question-view').style.display = 'none';
+      $('#admin-result-view').style.display = 'none';
+      $('#admin-leaderboard-view').style.display = 'none';
+      $('#admin-final-view').style.display = '';
+      $('#admin-controls').style.display = 'flex';
+      $('#admin-next-q').style.display = 'none';
+      $('#admin-show-lb').style.display = 'none';
+      $('#admin-end').style.display = 'block';
       break;
     case 'count_updated':
-      updateInstructorUI('result');
       break;
     case 'error':
       alert('Server: ' + msg.message);
@@ -1102,6 +1230,22 @@ $('#btn-end-session').addEventListener('click', function(){
   hostResetUI();
 });
 
+// Control bar click handlers
+$('#btn-host-next-q').addEventListener('click', function(){
+  if(hostWs) hostWs.send(JSON.stringify({type:'next'}));
+  if(adminSessionWs) adminSessionWs.send(JSON.stringify({type:'next'}));
+});
+$('#btn-host-show-lb').addEventListener('click', function(){
+  // Ask server for leaderboard
+  if(hostWs) hostWs.send(JSON.stringify({type:'leaderboard'}));
+  if(adminSessionWs) adminSessionWs.send(JSON.stringify({type:'leaderboard'}));
+});
+$('#btn-host-end').addEventListener('click', function(){
+  if(hostWs){ hostWs.send(JSON.stringify({type:'end'})); hostWs.close(); hostWs = null; }
+  if(adminSessionWs){ adminSessionWs.send(JSON.stringify({type:'end'})); adminSessionWs.close(); adminSessionWs = null; }
+  hostResetUI();
+});
+
 function hostResetUI(){
   $('#big-screen').classList.remove('active');
   $('#host-setup').style.display = '';
@@ -1143,7 +1287,7 @@ function handleHostMessage(msg){
       // Count players only (exclude host from count)
       var playerCount = (msg.count||0) - 1;
       if(playerCount < 0) playerCount = 0;
-      var playerNames = (msg.teams||[]).filter(function(t){ return t !== 'Host'; });
+      var playerNames = (msg.teams||[]).filter(function(t){ return t.name !== 'Host'; });
       updateHostTeams(playerNames);
       $('#host-waiting-msg').textContent = playerNames.length > 0
         ? 'Players connected — Click "Start Round"!'
@@ -1152,19 +1296,17 @@ function handleHostMessage(msg){
     case 'teams_updated':
       // Filter out host from display
       var playerTeams = msg.teams || [];
-      updateHostTeams(playerTeams.filter(function(t){ return t !== 'Host'; }));
+      updateHostTeams(playerTeams.filter(function(t){ return t.name !== 'Host'; }));
       break;
     case 'go_to_question':
       hostState = 'question';
       currentQuestion = msg.question;
       showQuestionView(msg);
-      break;
-    case 'question':
-      hostState = 'question';
-      currentQuestion = msg.question;
-      countdownSeconds = msg.timer_seconds || (msg.question && msg.question.timer_seconds) || 20;
-      startHostTimer(countdownSeconds);
-      showQuestionView(msg);
+      // Show controls: Next & Leaderboard hidden, End visible
+      $('#hs-controls').style.display = 'flex';
+      $('#btn-host-next-q').style.display = 'none';
+      $('#btn-host-show-lb').style.display = 'none';
+      $('#btn-host-end').style.display = 'block';
       break;
     case 'timer':
       if(hostState === 'question'){
@@ -1175,22 +1317,42 @@ function handleHostMessage(msg){
       hostState = 'result';
       clearInterval(timerInterval);
       showResultView(msg);
+      // Show controls: Next & Leaderboard visible, End visible
+      $('#hs-controls').style.display = 'flex';
+      $('#btn-host-next-q').style.display = 'block';
+      $('#btn-host-show-lb').style.display = 'block';
+      $('#btn-host-end').style.display = 'block';
       break;
     case 'leaderboard':
       hostState = 'leaderboard';
       clearInterval(timerInterval);
       showLeaderboard(msg);
+      // Show controls: Next visible, End visible
+      $('#hs-controls').style.display = 'flex';
+      $('#btn-host-next-q').style.display = 'block';
+      $('#btn-host-show-lb').style.display = 'none';
+      $('#btn-host-end').style.display = 'block';
       break;
     case 'count_updated':
       break;
     case 'final':
       hostState = 'final';
       clearInterval(timerInterval);
-      showFinal();
+      // Don't show final view yet - wait for final_standings message
+      // Show controls: only End Game visible
+      $('#hs-controls').style.display = 'flex';
+      $('#btn-host-next-q').style.display = 'none';
+      $('#btn-host-show-lb').style.display = 'none';
+      $('#btn-host-end').style.display = 'block';
       break;
     case 'final_standings':
       hostState = 'final';
       showFinal(msg);
+      // Show controls: only End Game visible
+      $('#hs-controls').style.display = 'flex';
+      $('#btn-host-next-q').style.display = 'none';
+      $('#btn-host-show-lb').style.display = 'none';
+      $('#btn-host-end').style.display = 'block';
       break;
     case 'team_disconnected':
       var tc = $('#host-teams-count');
@@ -1208,6 +1370,11 @@ function handleHostMessage(msg){
 function showQuestionView(msg){
   var q = currentQuestion || msg.question;
   if(!q) return;
+  // Show the big-screen container (Kahoot-style host screen)
+  $('#big-screen').classList.add('active');
+  $('#host-setup').style.display = 'none';
+  $('#host-lobby').style.display = 'none';
+  // Show question view, hide others
   $('#hs-question-view').style.display = '';
   $('#hs-result-view').style.display = 'none';
   $('#hs-leaderboard-view').style.display = 'none';
@@ -1229,11 +1396,13 @@ function showQuestionView(msg){
   var optionsEl = $('#hs-options');
   var optionsHtml = '';
   (q.options||[]).forEach(function(opt,i){
-    optionsHtml += '<div class="hs-opt hs-opt-'+i+'" data-idx="'+i+'">'+esc(opt)+'</div>';
+    var optText = (typeof opt === 'object') ? (opt.text || opt.id || JSON.stringify(opt)) : opt;
+    optionsHtml += '<div class="hs-opt hs-opt-'+i+'" data-idx="'+i+'">'+esc(optText)+'</div>';
   });
   optionsEl.innerHTML = optionsHtml;
-  // Start timer
+  // Auto-start timer
   countdownSeconds = q.timer_seconds || msg.timer_seconds || 20;
+  clearInterval(timerInterval);
   startHostTimer(countdownSeconds);
 }
 
@@ -1257,14 +1426,8 @@ function startHostTimer(total){
   timerInterval = setInterval(tick, 1000);
 }
 
-function hostTimerTick(seconds){
-  countdownSeconds = seconds;
-  var total = (currentQuestion && currentQuestion.timer_seconds) || 20;
-  var fill = $('#hs-timer-fill');
-  var pct = (seconds/total)*100;
-  fill.style.width = pct+'%';
-  var color = seconds > total*0.5 ? 'var(--green)' : (seconds > total*0.25 ? 'var(--accent)' : 'var(--red)');
-  fill.style.background = color;
+function showHostTimer(){
+  startHostTimer(countdownSeconds);
 }
 
 function showResultView(msg){
@@ -1284,36 +1447,26 @@ function showResultView(msg){
 function showLeaderboard(msg){
   $('#hs-question-view').style.display = 'none';
   $('#hs-result-view').style.display = 'none';
+  $('#hs-timer-fill').parentElement.style.display = 'none';
   $('#hs-leaderboard-view').style.display = '';
   var entries = msg.standings || [];
   var sorted = entries.slice().sort(function(a,b){ return b.points - a.points; });
   var lbEl = $('#hs-lb-entries');
   lbEl.innerHTML = sorted.map(function(s,i){
-    return '<div class="lb-entry '+(i===0?'lb-first':'')+'">'
-      + '<span class="lb-pos">'+(i===0?'&#129346;':i===1?'&#129347;':i===2?'&#129348;':'#'+(i+1))+'</span>'
-      + '<span class="lb-team">'+esc(s.name)+'</span>'
-      + '<span class="lb-score">'+s.points+' pts</span></div>';
+    var lastPts = s.last_points || 0;
+    var lastPtsHtml = lastPts > 0 
+      ? '<span style="color:var(--green);margin-left:8px;font-size:0.9rem">+'+lastPts+'</span>'
+      : '<span style="color:var(--red);margin-left:8px;font-size:0.9rem">+0</span>';
+    var rank = (i+1) + '.';
+    var isFirst = i === 0;
+    return '<div class="lb-entry '+(isFirst?'lb-first':'')+'">'
+      + '<span class="lb-pos" style="width:30px;text-align:center;font-weight:700">'+rank+'</span>'
+      + '<span class="lb-team" style="flex:1">'+esc(s.team)+'</span>'
+      + '<span class="lb-score">'+s.points+' pts</span>'
+      + lastPtsHtml
+      + '</div>';
   }).join('');
-  // Use server-provided total_questions and question_index
-  var totalQ = msg.total_questions || 0;
-  var qNum = msg.question_index !== undefined ? msg.question_index + 1 : 1;
-  var qlabel = document.createElement('div');
-  qlabel.className = 'text-small mt-16';
-  qlabel.textContent = 'Question ' + qNum + ' of ' + totalQ;
-  lbEl.parentElement.insertBefore(qlabel, lbEl.nextSibling);
-  var isLast = (msg.question_index !== undefined) ? msg.question_index >= (totalQ - 1) : false;
-  if(isLast){
-    clearInterval(timerInterval);
-    setTimeout(function(){
-      if(hostWs && hostState === 'leaderboard'){
-        hostWs.send(JSON.stringify({type:'next'}));
-      } else if(adminSessionWs && hostState === 'leaderboard'){
-        adminSessionWs.send(JSON.stringify({type:'next'}));
-      }
-    }, 8000);
-  } else {
-    startHostTimer(msg.queue_seconds || 8);
-  }
+  // No question counter shown on leaderboard
 }
 
 function showFinal(msg){
@@ -1325,43 +1478,38 @@ function showFinal(msg){
   // Sort descending
   standings.sort(function(a,b){ return b.points - a.points; });
   
-  // Render podium
+  // Render podium only (no standings list)
   var podiumEl = $('#hs-podium');
   if(podiumEl){
-    var first = standings[0] || {name:'N/A',points:0};
-    var second = standings[1] || {name:'N/A',points:0};
-    var third = standings[2] || {name:'N/A',points:0};
+    var first = standings[0] || {team:'N/A',points:0};
+    var second = standings[1] || {team:'N/A',points:0};
+    var third = standings[2] || {team:'N/A',points:0};
     podiumEl.innerHTML =
       '<div class="podium-place second">' +
         '<div class="podium-medal">&#129352;</div>' +
-        '<div class="podium-name">'+esc(second.name)+'</div>' +
+        '<div class="podium-name">'+esc(second.team)+'</div>' +
         '<div class="podium-score">'+second.points+' pts</div>' +
         '<div class="podium-bar second"></div>' +
       '</div>' +
       '<div class="podium-place first">' +
         '<div class="podium-medal">&#127942;</div>' +
-        '<div class="podium-name">'+esc(first.name)+'</div>' +
+        '<div class="podium-name">'+esc(first.team)+'</div>' +
         '<div class="podium-score">'+first.points+' pts</div>' +
         '<div class="podium-bar first"></div>' +
       '</div>' +
       '<div class="podium-place third">' +
         '<div class="podium-medal">&#129353;</div>' +
-        '<div class="podium-name">'+esc(third.name)+'</div>' +
+        '<div class="podium-name">'+esc(third.team)+'</div>' +
         '<div class="podium-score">'+third.points+' pts</div>' +
         '<div class="podium-bar third"></div>' +
       '</div>';
   }
   
-  // Also render full standings list below podium
-  var el = $('#hs-final-entries');
-  el.innerHTML = standings.map(function(s,i){
-    return '<div class="lb-entry '+(i===0?'lb-first':'')+'">'
-      + '<span class="lb-pos">'+(i===0?'&#129346;':i===1?'&#129347;':i===2?'&#129348;':'#'+(i+1))+'</span>'
-      + '<span class="lb-team">'+esc(s.name)+'</span>'
-      + '<span class="lb-score">'+s.points+' pts</span></div>';
-  }).join('');
-  
   clearInterval(timerInterval);
+  
+  // Hide the standings list container
+  var entriesEl = $('#hs-final-entries');
+  if(entriesEl) entriesEl.style.display = 'none';
   
   // Auto-hide after 15 seconds or wait for user action
   var autoTimer = setTimeout(function(){
@@ -1369,9 +1517,6 @@ function showFinal(msg){
       // Keep showing until user clicks
     }
   }, 15000);
-  
-  // Start confetti!
-  startConfetti();
   
   // Attach handlers for new buttons
   var btnPlayAgain = document.getElementById('btn-host-play-again');
@@ -1391,6 +1536,159 @@ function showFinal(msg){
       stopConfetti();
     };
   }
+}
+
+// ═══════════════════════════════════════════
+//  ADMIN BIG-SCREEN RENDERING
+// ═══════════════════════════════════════════
+var adminTimerInterval = null;
+var adminCountdownSeconds = 0;
+var adminTotalSeconds = 0;
+
+function showAdminBigScreen(){
+  $('#admin-big-screen').classList.add('active');
+}
+
+function showAdminQuestion(msg){
+  var q = msg.question;
+  if(!q) return;
+  // Show the admin big-screen container
+  $('#admin-big-screen').classList.add('active');
+  $('#instructor-panel').style.display = 'none';
+  // Show question view, hide others
+  $('#admin-question-view').style.display = '';
+  $('#admin-result-view').style.display = 'none';
+  $('#admin-leaderboard-view').style.display = 'none';
+  $('#admin-final-view').style.display = 'none';
+  // Media
+  var mediaEl = $('#admin-media');
+  mediaEl.innerHTML = '';
+  if(q.media_key){
+    var ext = (q.media_key.split('.').pop()||'').toLowerCase();
+    if(['jpg','jpeg','png','gif','webp','svg'].indexOf(ext) !== -1){
+      mediaEl.innerHTML = '<img src="'+API+'/api/media/'+encodeURIComponent(adminSelectedQuiz)+'/'+q.media_key+'">';
+    } else if(['mp4','webm','ogg'].indexOf(ext) !== -1){
+      mediaEl.innerHTML = '<video autoplay controls><source src="'+API+'/api/media/'+encodeURIComponent(adminSelectedQuiz)+'/'+q.media_key+'"></video>';
+    } else if(['mp3','ogg'].indexOf(ext) !== -1){
+      mediaEl.innerHTML = '<audio autoplay controls><source src="'+API+'/api/media/'+encodeURIComponent(adminSelectedQuiz)+'/'+q.media_key+'"></audio>';
+    }
+  }
+  $('#admin-question-text').textContent = q.question_text;
+  var optionsEl = $('#admin-options');
+  var optionsHtml = '';
+  (q.options||[]).forEach(function(opt,i){
+    var optText = (typeof opt === 'object') ? (opt.text || opt.id || JSON.stringify(opt)) : opt;
+    optionsHtml += '<div class="hs-opt hs-opt-'+i+'" data-idx="'+i+'">'+esc(optText)+'</div>';
+  });
+  optionsEl.innerHTML = optionsHtml;
+  // Auto-start timer
+  adminCountdownSeconds = q.timer_seconds || 20;
+  adminTotalSeconds = q.timer_seconds || 20;
+  clearInterval(adminTimerInterval);
+  startAdminTimer(adminCountdownSeconds);
+}
+
+function startAdminTimer(total){
+  clearInterval(adminTimerInterval);
+  adminCountdownSeconds = total;
+  adminTotalSeconds = total;
+  var fill = $('#admin-timer-fill');
+  function tick(){
+    if(adminCountdownSeconds <= 0){
+      clearInterval(adminTimerInterval);
+      fill.style.width = '0%';
+      return;
+    }
+    var pct = (adminCountdownSeconds/total)*100;
+    fill.style.width = pct+'%';
+    var color = adminCountdownSeconds > total*0.5 ? 'var(--green)' : (adminCountdownSeconds > total*0.25 ? 'var(--accent)' : 'var(--red)');
+    fill.style.background = color;
+    adminCountdownSeconds--;
+  }
+  tick();
+  adminTimerInterval = setInterval(tick, 1000);
+}
+
+function updateAdminTimer(seconds){
+  var total = adminTotalSeconds || 20;
+  var fill = $('#admin-timer-fill');
+  var pct = (seconds/total)*100;
+  fill.style.width = pct+'%';
+  var color = seconds > total*0.5 ? 'var(--green)' : (seconds > total*0.25 ? 'var(--accent)' : 'var(--red)');
+  fill.style.background = color;
+}
+
+function showAdminResult(msg){
+  $('#admin-question-view').style.display = 'none';
+  $('#admin-result-view').style.display = '';
+  var correctAnswer = msg.correct_answer;
+  var options = msg.options || [];
+  var correctText = options[correctAnswer] || 'Unknown';
+  $('#admin-correct-text').textContent = 'Correct answer: ' + correctText;
+  $('#admin-result-icon').textContent = '✓';
+  $('#admin-result-icon').className = 'result-icon result-correct';
+  $('#admin-result-points').textContent = '';
+}
+
+function showAdminLeaderboard(msg){
+  $('#admin-question-view').style.display = 'none';
+  $('#admin-result-view').style.display = 'none';
+  $('#admin-timer-fill').parentElement.style.display = 'none';
+  $('#admin-leaderboard-view').style.display = '';
+  var standings = msg.standings || [];
+  var lbEl = $('#admin-lb-entries');
+  lbEl.innerHTML = standings.map(function(s,i){
+    var lastPts = s.last_points || 0;
+    var lastPtsHtml = lastPts > 0 
+      ? '<span style="color:var(--green);margin-left:8px;font-size:0.9rem">+'+lastPts+'</span>'
+      : '<span style="color:var(--red);margin-left:8px;font-size:0.9rem">+0</span>';
+    var rank = (i+1) + '.';
+    var isFirst = i === 0;
+    return '<div class="lb-entry '+(isFirst?'lb-first':'')+'">'
+      + '<span class="lb-pos" style="width:30px;text-align:center;font-weight:700">'+rank+'</span>'
+      + '<span class="lb-team" style="flex:1">'+esc(s.team)+'</span>'
+      + '<span class="lb-score">'+s.points+' pts</span>'
+      + lastPtsHtml
+      + '</div>';
+  }).join('');
+}
+
+function showAdminFinal(msg){
+  $('#admin-question-view').style.display = 'none';
+  $('#admin-result-view').style.display = 'none';
+  $('#admin-leaderboard-view').style.display = 'none';
+  $('#admin-final-view').style.display = '';
+  var standings = (msg && msg.standings) || [];
+  standings.sort(function(a,b){ return b.points - a.points; });
+  var podiumEl = $('#admin-podium');
+  if(podiumEl){
+    var first = standings[0] || {team:'N/A',points:0};
+    var second = standings[1] || {team:'N/A',points:0};
+    var third = standings[2] || {team:'N/A',points:0};
+    podiumEl.innerHTML =
+      '<div class="podium-place second">'
+        + '<div class="podium-medal">&#129352;</div>'
+        + '<div class="podium-name">'+esc(second.team)+'</div>'
+        + '<div class="podium-score">'+second.points+' pts</div>'
+        + '<div class="podium-bar second"></div>'
+      + '</div>'
+      + '<div class="podium-place first">'
+        + '<div class="podium-medal">&#127942;</div>'
+        + '<div class="podium-name">'+esc(first.team)+'</div>'
+        + '<div class="podium-score">'+first.points+' pts</div>'
+        + '<div class="podium-bar first"></div>'
+      + '</div>'
+      + '<div class="podium-place third">'
+        + '<div class="podium-medal">&#129353;</div>'
+        + '<div class="podium-name">'+esc(third.team)+'</div>'
+        + '<div class="podium-score">'+third.points+' pts</div>'
+        + '<div class="podium-bar third"></div>'
+      + '</div>';
+  }
+  // Hide the standings list container
+  var entriesEl = $('#admin-final-entries');
+  if(entriesEl) entriesEl.style.display = 'none';
+  clearInterval(adminTimerInterval);
 }
 
 // ═══════════════════════════════════════════
@@ -1490,6 +1788,7 @@ function handlePlayerMessage(msg){
       $('#player-join').style.display = 'none';
       $('#player-screen').classList.add('active');
       $('#ps-team-name').textContent = 'Team: ' + playerName;
+      if(msg.quiz_name) playerQuizName = msg.quiz_name;
       $('#ps-waiting').style.display = '';
       $('#ps-question-view').style.display = 'none';
       $('#ps-result-view').style.display = 'none';
@@ -1664,11 +1963,19 @@ function showPlayerLeaderboard(msg){
   var standings = msg.standings || [];
   var html = '';
   standings.forEach(function(s, i){
-    var highlight = s.name === playerName ? ' style="border-color:var(--accent)"' : '';
-    html += '<div class="lb-entry'+(i===0?' lb-first':'')+'"'+highlight+'>';
-    html += '<div class="lb-pos">#'+(i+1)+'</div>';
-    html += '<div class="lb-team">'+esc(s.name)+'</div>';
+    var isCurrentTeam = s.team === playerName;
+    var rank = (i+1) + '.';
+    var isFirst = i === 0;
+    var style = isCurrentTeam ? ' style="text-decoration:underline;text-decoration-color:var(--accent);text-decoration-thickness:2px"' : '';
+    var lastPts = s.last_points || 0;
+    var lastPtsHtml = lastPts > 0 
+      ? '<span style="color:var(--green);margin-left:6px;font-size:0.85rem">+'+lastPts+'</span>'
+      : '<span style="color:var(--red);margin-left:6px;font-size:0.85rem">+0</span>';
+    html += '<div class="lb-entry'+(isFirst?' lb-first':'')+'"'+style+'>';
+    html += '<div class="lb-pos" style="width:30px;text-align:center;font-weight:700">'+rank+'</div>';
+    html += '<div class="lb-team" style="flex:1">'+esc(s.team)+'</div>';
     html += '<div class="lb-score">'+s.points+' pts</div>';
+    html += lastPtsHtml;
     html += '</div>';
   });
   entries.innerHTML = html;
@@ -1681,20 +1988,29 @@ function showPlayerFinal(msg){
   $('#ps-leaderboard').style.display = 'none';
   $('#ps-final').style.display = '';
   var standings = msg.standings || [];
-  var myRank = standings.findIndex(function(s){ return s.name === playerName; }) + 1;
-  var myInfo = standings.find(function(s){ return s.name === playerName; }) || {};
+  var myRank = standings.findIndex(function(s){ return s.team === playerName; }) + 1;
+  var myInfo = standings.find(function(s){ return s.team === playerName; }) || {};
   $('#ps-final-message').textContent = myRank > 0 ? 'You finished #' + myRank + '! Total: ' + myInfo.points + ' pts' : 'Game over!';
   var standingsEl = $('#ps-final-standings');
   var html = '';
   standings.forEach(function(s, i){
+    var emoji = '';
+    if(i === 0){
+      emoji = '<span style="margin-left:6px">🏆</span>'; // Winner gets trophy
+    } else if(i === standings.length - 1){
+      emoji = '<span style="margin-left:6px">💀</span>'; // Last place gets skull
+    } else {
+      emoji = '<span style="margin-left:6px">😒</span>'; // Middle gets bored face
+    }
     html += '<div class="lb-entry'+(i===0?' lb-first':'')+'">';
     html += '<div class="lb-pos">'+(i===0?'\uD83E\uDD47':i===1?'\uD83E\uDD48':i===2?'\uD83E\uDD49':'#'+(i+1))+'</div>';
-    html += '<div class="lb-team">'+esc(s.name)+'</div>';
+    html += '<div class="lb-team">'+esc(s.team)+emoji+'</div>';
     html += '<div class="lb-score">'+s.points+' pts</div>';
     html += '</div>';
   });
   standingsEl.innerHTML = html;
-  startConfetti();
+  // Spawn emojis based on this player's rank (confetti handled inside spawnFinalEmojis)
+  spawnFinalEmojis(standings);
 }
 
 
@@ -1712,21 +2028,49 @@ function startConfetti(){
   var ctx = canvas.getContext('2d');
   confettiParticles = [];
   confettiRunning = true;
-  var colors = ['#f5a623','#e74c3c','#2ecc71','#3498db','#9b59b6','#00d2ff','#ffd700','#ff69b4'];
-  for(var i = 0; i < 200; i++){
+  var colors = ['#f5a623','#e74c3c','#2ecc71','#3498db','#9b59b6','#00d2ff','#ffd700','#ff69b4','#00ff00','#ff00ff'];
+  
+  // Wild confetti: particles coming from ALL edges at once
+  for(var i = 0; i < 400; i++){
+    var side = Math.floor(Math.random() * 4); // 0=top, 1=right, 2=bottom, 3=left
+    var x, y, vx, vy;
+    
+    if(side === 0){ // from top
+      x = Math.random() * canvas.width;
+      y = -20;
+      vx = (Math.random() - 0.5) * 10;
+      vy = Math.random() * 8 + 4;
+    } else if(side === 1){ // from right
+      x = canvas.width + 20;
+      y = Math.random() * canvas.height;
+      vx = -(Math.random() * 8 + 4);
+      vy = (Math.random() - 0.5) * 10;
+    } else if(side === 2){ // from bottom
+      x = Math.random() * canvas.width;
+      y = canvas.height + 20;
+      vx = (Math.random() - 0.5) * 10;
+      vy = -(Math.random() * 8 + 4);
+    } else { // from left
+      x = -20;
+      y = Math.random() * canvas.height;
+      vx = Math.random() * 8 + 4;
+      vy = (Math.random() - 0.5) * 10;
+    }
+    
     confettiParticles.push({
-      x: Math.random() * canvas.width,
-      y: Math.random() * canvas.height - canvas.height,
-      w: Math.random() * 10 + 5,
-      h: Math.random() * 6 + 3,
+      x: x,
+      y: y,
+      w: Math.random() * 14 + 6,
+      h: Math.random() * 8 + 4,
       color: colors[Math.floor(Math.random() * colors.length)],
-      vx: (Math.random() - 0.5) * 4,
-      vy: Math.random() * 3 + 2,
+      vx: vx,
+      vy: vy,
       rotation: Math.random() * 360,
-      rotSpeed: (Math.random() - 0.5) * 10,
+      rotSpeed: (Math.random() - 0.5) * 20,
       opacity: 1
     });
   }
+  
   function animate(){
     if(!confettiRunning) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -1735,10 +2079,11 @@ function startConfetti(){
       p.x += p.vx;
       p.y += p.vy;
       p.rotation += p.rotSpeed;
-      p.vy += 0.05;
-      if(p.y > canvas.height + 20){
+      p.vy += 0.08; // more gravity for wild effect
+      if(p.y > canvas.height + 20 || p.x < -50 || p.x > canvas.width + 50){
         p.y = -20;
         p.x = Math.random() * canvas.width;
+        p.vy = Math.random() * 8 + 4;
       }
       ctx.save();
       ctx.translate(p.x, p.y);
@@ -1751,7 +2096,7 @@ function startConfetti(){
     confettiAnimFrame = requestAnimationFrame(animate);
   }
   animate();
-  setTimeout(function(){ stopConfetti(); }, 6000);
+  setTimeout(function(){ stopConfetti(); }, 50000); // 5x longer (50 seconds)
 }
 
 function stopConfetti(){
@@ -1760,6 +2105,78 @@ function stopConfetti(){
   var canvas = document.getElementById('confetti-canvas');
   if(canvas) canvas.style.display = 'none';
   confettiParticles = [];
+}
+
+function spawnFinalEmojis(standings){
+  // Only spawn effects on player screen (when playerName is available)
+  // Host/admin screens should NOT spawn emojis
+  var currentTeam = playerName || '';
+  
+  // If no current team (host/admin), don't spawn anything
+  if(!currentTeam) {
+    console.log('[spawnFinalEmojis] No team name found, skipping');
+    return;
+  }
+  
+  console.log('[spawnFinalEmojis] Current team:', currentTeam, 'Standings:', standings);
+  
+  // Find this player's rank
+  var playerRank = -1;
+  for(var i = 0; i < standings.length; i++){
+    if(standings[i].team === currentTeam){
+      playerRank = i;
+      console.log('[spawnFinalEmojis] Found player rank:', playerRank);
+      break;
+    }
+  }
+  
+  // Winner (1st place) - wild confetti
+  if(playerRank === 0){
+    console.log('[spawnFinalEmojis] Starting confetti for winner');
+    startConfetti();
+  }
+  // Last place - continuous skulls raining down
+  else if(playerRank === standings.length - 1 && standings.length >= 2){
+    console.log('[spawnFinalEmojis] Starting continuous skulls for last place');
+    
+    // Spawn skulls continuously every 200ms for 50 seconds
+    var skullInterval = setInterval(function(){
+      var skull = document.createElement('div');
+      skull.className = 'emoji-effect emoji-skull';
+      skull.textContent = '💀';
+      skull.style.left = (Math.random() * 90 + 5) + '%';
+      skull.style.top = '-50px';
+      skull.style.animationDuration = (2 + Math.random() * 2) + 's';
+      document.body.appendChild(skull);
+      setTimeout(function(){ skull.remove(); }, 4000);
+    }, 200);
+    
+    // Stop spawning after 50 seconds
+    setTimeout(function(){
+      clearInterval(skullInterval);
+    }, 50000);
+  }
+  // Middle teams - continuous bored faces wiggling
+  else if(playerRank > 0 && playerRank < standings.length - 1){
+    console.log('[spawnFinalEmojis] Starting continuous bored faces for middle');
+    
+    // Spawn bored faces continuously every 400ms for 50 seconds
+    var boredInterval = setInterval(function(){
+      var bored = document.createElement('div');
+      bored.className = 'emoji-effect emoji-bored';
+      bored.textContent = '😒';
+      bored.style.left = (Math.random() * 80 + 10) + '%';
+      bored.style.top = (Math.random() * 60 + 20) + '%';
+      bored.style.animationDelay = (Math.random() * 2) + 's';
+      document.body.appendChild(bored);
+      setTimeout(function(){ bored.remove(); }, 5000);
+    }, 400);
+    
+    // Stop spawning after 50 seconds
+    setTimeout(function(){
+      clearInterval(boredInterval);
+    }, 50000);
+  }
 }
 
 

@@ -85,7 +85,9 @@ class GameSession:
     """Manages a single game session (one quiz, one round at a time)."""
 
     def __init__(self, quiz: Quiz):
-        self.session_id = str(uuid.uuid4())[:8]
+        import random
+        # Generate 3-digit numeric session code (000-999)
+        self.session_id = str(random.randint(0, 999)).zfill(3)
         self.quiz = quiz
         self.state: str = "idle"   # idle | connecting | question | result | final
         self.teams: dict[str, TeamInfo] = {}
@@ -98,6 +100,7 @@ class GameSession:
         self._lock = asyncio.Lock()
         self._advance_event = asyncio.Event()  # Signal to go to next question
         self._stop_event = asyncio.Event()     # Signal to stop the game
+        self._timer_started = False            # Track if timer has started
 
     # ── Team management ──────────────────────────────────────────────────
 
@@ -119,12 +122,12 @@ class GameSession:
         # Notify everyone of the updated team list
         await self.broadcast({
             "type": "teams_updated",
-            "teams": list(self.teams.keys()),
+            "teams": [{"name": t.name, "socket_key": k} for k, t in self.teams.items()],
             "count": len(self.teams),
             "max": self.quiz.max_teams
         })
         # Tell a joining player they're in
-        await socket.send_json({"type": "joined", "team_name": name})
+        await socket.send_json({"type": "joined", "team_name": name, "quiz_name": self.quiz.name})
         return True
 
     # ── Game play ──────────────────────────────────────────────────────────
@@ -149,35 +152,45 @@ class GameSession:
         return q
 
     async def _collect_answers(self, timeout: int):
-        """Wait for all teams to answer, or timeout, or host clicks next.
-        
-        Timer is broadcast every 0.5s to reduce WebSocket flood.
-        """
-        start = asyncio.get_running_loop().time()
-        remaining = timeout
-
+        """Wait for all teams to answer, or timeout, or host clicks next."""
         # Get real player teams (exclude host)
         player_teams = {k: v for k, v in self.teams.items() if v.name != "Host"}
         total_players = len(player_teams)
-
-        while remaining > 0 and not self._stop_event.is_set():
-            # Wait 0.5s OR advance event, whichever comes first
-            try:
-                await asyncio.wait(
-                    [asyncio.create_task(asyncio.sleep(0.5)), asyncio.create_task(self._advance_event.wait())],
-                    return_when=asyncio.FIRST_COMPLETED
-                )
-                # If advance event was set, break out immediately
-                if self._advance_event.is_set():
-                    break
-            except asyncio.CancelledError:
-                break
-                
-            elapsed = asyncio.get_running_loop().time() - self.question_start_time
-            remaining = max(0, int(timeout - elapsed))
-            await self.broadcast({"type": "timer", "seconds": remaining})
-
-            # Check if all players answered
+        
+        # Use a LOCAL event for "host clicked next" to avoid race conditions
+        # This event is ONLY checked inside this method, so we never miss clicks
+        next_click_event = asyncio.Event()
+        
+        # Wrapper that translates _advance_event to our local next_click_event
+        async def listen_for_next():
+            await self._advance_event.wait()
+            self._advance_event.clear()
+            next_click_event.set()
+        
+        # Start listening for next clicks immediately
+        next_listener = asyncio.create_task(listen_for_next())
+        
+        # Create a finish event that will be set when either:
+        # 1. The timeout occurs (via timeout_task)
+        # 2. The host clicks Next (via next_click_event)
+        finish_event = asyncio.Event()
+        
+        # Schedule timeout to set the event
+        async def on_timeout():
+            await asyncio.sleep(timeout)
+            finish_event.set()
+        
+        # When host clicks next, set finish event
+        async def on_next():
+            await next_click_event.wait()
+            finish_event.set()
+        
+        # Start both tasks
+        timeout_task = asyncio.create_task(on_timeout())
+        next_task = asyncio.create_task(on_next())
+        
+        # Poll for answers while waiting
+        while not finish_event.is_set() and not self._stop_event.is_set():
             answered = sum(1 for t in player_teams.values() if t.answer)
             if answered != self.answers_collected:
                 self.answers_collected = answered
@@ -186,11 +199,18 @@ class GameSession:
                     "count": self.answers_collected,
                     "total": total_players
                 })
-
-            # Exit early if all players answered and result was already sent
-            if self.answers_collected >= total_players and self.result_sent:
-                break
-
+            
+            # Wait a short time before checking again
+            await asyncio.sleep(0.2)
+        
+        # Cancel all tasks
+        timeout_task.cancel()
+        next_task.cancel()
+        next_listener.cancel()
+        
+        # Clear the advance event so the round_loop can use it for the NEXT question's "Next" click
+        self._advance_event.clear()
+        
         # Send result if not already sent (from receive_answer or timeout)
         if not self.result_sent:
             await self._send_result()
@@ -226,34 +246,42 @@ class GameSession:
 
         self.state = "question"
         self.current_question_idx = 0
-        self.question_start_time = asyncio.get_running_loop().time()
-
-        # Broadcast go_to_question to kick off the first question
-        await self.broadcast({
-            "type": "go_to_question",
-            "question_index": self.current_question_idx,
-            "question": q_list[self.current_question_idx],
-            "total_questions": len(q_list),
-            "timer_seconds": q_list[self.current_question_idx]["timer_seconds"]
-        })
 
         try:
             while self.current_question_idx < len(q_list):
                 self._stop_event.clear()
                 self.result_sent = False
                 self.answers_collected = 0
+                self._timer_started = False
                 # Reset answers for all teams
                 for t in self.teams.values():
                     t.answer = None
                     t.answer_time = 0.0
 
                 q = q_list[self.current_question_idx]
+
+                # Broadcast question first so clients can render it
+                await self.broadcast({
+                    "type": "go_to_question",
+                    "question_index": self.current_question_idx,
+                    "question": q,
+                    "total_questions": len(q_list),
+                    "timer_seconds": q["timer_seconds"]
+                })
+
+                # Timer starts automatically
+                self._timer_started = True
                 self.question_start_time = asyncio.get_running_loop().time()
 
+                # Broadcast timer started
+                await self.broadcast({
+                    "type": "timer_start",
+                    "question_index": self.current_question_idx,
+                    "timer_seconds": q["timer_seconds"]
+                })
+
                 # Wait for either timeout or all answered
-                pass
                 await self._collect_answers(q["timer_seconds"])
-                pass
 
                 # Advance to next question or final
                 self.current_question_idx += 1
@@ -263,13 +291,12 @@ class GameSession:
                     await self._send_final()
                     break
 
-                # Wait for host to click "Next"
+                # Wait for host to click "Next" before showing next question
+                # (No automatic advance - host must manually click Next)
                 await self._advance_event.wait()
-                # Clear the event now that we've acted on it
                 self._advance_event.clear()
                 # Broadcast next question
                 next_q = q_list[self.current_question_idx]
-                pass
                 await self.broadcast({
                     "type": "go_to_question",
                     "question_index": self.current_question_idx,
@@ -289,11 +316,12 @@ class GameSession:
 
     async def _count_answers(self):
         """Count how many teams have answered."""
-        count = sum(1 for t in self.teams.values() if t.answer)
+        count = sum(1 for t in self.teams.values() if t.name != "Host" and t.answer)
+        total_players = sum(1 for t in self.teams.values() if t.name != "Host")
         await self.broadcast({
             "type": "count_updated",
             "count": count,
-            "total": len(self.teams)
+            "total": total_players
         })
 
     async def _send_result(self):
@@ -338,8 +366,10 @@ class GameSession:
             points = 0
             if is_correct:
                 elapsed = team.answer_time or 0
-                remaining = max(0, q["timer_seconds"] - elapsed)
-                points = int(self.quiz.points_per_tick * remaining)
+                # Normalize scoring to 200 points max, based on elapsed time relative to question duration
+                # This ensures answering at 5s gives same points whether question is 10s or 20s
+                q_timer = max(q.get("timer_seconds", 10), 1)
+                points = int(200 * max(0, 1 - elapsed / q_timer) ** 2.5)
             self.cumulative_scores[name] = self.cumulative_scores.get(name, 0) + points
             results.append({
                 "team": name,
@@ -358,11 +388,24 @@ class GameSession:
             "options": q["options"]
         })
 
-        # Show leaderboard
-        leaderboard = sorted(results, key=lambda r: (-r["points"], r["team"]))
+        # Show leaderboard using cumulative scores
+        leaderboard = sorted(totals.items(), key=lambda x: (-x[1], x[0]))
+        # Add last question points to each team
+        standings_with_points = []
+        for name, score in leaderboard:
+            last_pts = 0
+            for r in results:
+                if r['team'] == name:
+                    last_pts = r['points']
+                    break
+            standings_with_points.append({
+                "team": name,
+                "points": score,
+                "last_points": last_pts
+            })
         await self.broadcast({
             "type": "leaderboard",
-            "standings": leaderboard,
+            "standings": standings_with_points,
             "totals": totals,
             "question_index": q_index + 1,
             "total_questions": len(self.quiz.questions),
@@ -376,19 +419,17 @@ class GameSession:
         return totals
 
     async def _send_final(self):
-        pass
         self.state = "final"
         await self.broadcast({"type": "final"})
 
-        # Final standings
+        # Final standings - convert to proper format
         totals = self._get_final_totals()
-        pass
         standings = sorted(totals.items(), key=lambda x: -x[1])
-        pass
+        standings_formatted = [{"team": name, "points": score} for name, score in standings]
 
         await self.broadcast({
             "type": "final_standings",
-            "standings": standings,
+            "standings": standings_formatted,
             "session_id": self.session_id
         })
 
@@ -724,13 +765,14 @@ async def websocket_game(websocket: WebSocket, session_id: str):
                     continue
 
                 session = GameSession(quiz)
-                # Use the connection key as the session ID so player can connect to /ws/{session_id}
-                session.session_id = session_id
-                session.teams[session_id] = TeamInfo(
+                # Add host team using "Host" as the key
+                session.teams["Host"] = TeamInfo(
                     socket=websocket, name="Host",
                     connected_since=asyncio.get_running_loop().time()
                 )
+                # Store session using BOTH the URL path (for host) and 3-digit code (for players)
                 active_sessions[session_id] = session
+                active_sessions[session.session_id] = session
 
                 await websocket.send_json({
                     "type": "session_started",
@@ -746,7 +788,7 @@ async def websocket_game(websocket: WebSocket, session_id: str):
                 await websocket.send_json({
                     "type": "qr_url",
                     "url": qr_url,
-                    "teams": ["Host"],
+                    "teams": [{"name": "Host", "socket_key": "Host"}],
                     "count": 1
                 })
                 # Do NOT auto-start round_loop. Host must click "Start Game" (send "start2" command).
@@ -773,13 +815,74 @@ async def websocket_game(websocket: WebSocket, session_id: str):
                     elapsed = msg.get("elapsed", 0)
                     try:
                         await session.receive_answer(team_name, msg.get("answer_id"), elapsed)
-                    except Exception as e:
-                        print(f"Answer error for {team_name}: {e}")
-                        await websocket.send_json({"type": "error", "message": f"Failed to submit answer: {e}"})
+                    except Exception:
+                        await websocket.send_json({"type": "error", "message": "Failed to submit answer"})
+
+            elif msg.get("type") == "start_timer":
+                # Host clicks "Start Timer" — begin countdown for current question
+                if session._timer_started:
+                    continue  # Timer already started
+                session._advance_event.set()
 
             elif msg.get("type") == "next":
-                pass
                 session._advance_event.set()
+
+            elif msg.get("type") == "leaderboard":
+                # Host clicks "Leaderboard" — show current standings using same scoring as _send_result
+                q = session.get_current_question()
+                if q:
+                    q_index = session.current_question_idx
+                    results = []
+                    player_teams = {k: v for k, v in session.teams.items() if v.name != "Host"}
+                    for name, team in player_teams.items():
+                        is_correct = False
+                        if team.answer is not None:
+                            qa = q["answer"]
+                            if isinstance(qa, int):
+                                if isinstance(team.answer, str):
+                                    try:
+                                        str_idx = int(team.answer)
+                                        if str_idx == qa:
+                                            is_correct = True
+                                    except ValueError:
+                                        pass
+                                    if not is_correct:
+                                        for idx, opt in enumerate(q.get("options", [])):
+                                            if str(opt.get("id", "")) == team.answer:
+                                                is_correct = True
+                                else:
+                                    is_correct = team.answer == qa
+                        # Use same normalized scoring as _send_result
+                        points = 0
+                        if is_correct:
+                            elapsed = team.answer_time or 0
+                            points = int(200 * max(0, 1 - elapsed/20) ** 2.5)
+                        results.append({"team": name, "points": points, "is_correct": is_correct, "time_used": round(team.answer_time, 1) if team.answer_time else None})
+                    # Sort by points descending
+                    results.sort(key=lambda r: (-r["points"], r["team"]))
+                    # Add cumulative scores
+                    totals = {name: session.cumulative_scores.get(name, 0) for name in player_teams}
+                    # Create standings with cumulative scores
+                    leaderboard = sorted(totals.items(), key=lambda x: (-x[1], x[0]))
+                    standings_with_points = []
+                    for name, score in leaderboard:
+                        last_pts = 0
+                        for r in results:
+                            if r['team'] == name:
+                                last_pts = r['points']
+                                break
+                        standings_with_points.append({
+                            "team": name,
+                            "points": score,
+                            "last_points": last_pts
+                        })
+                    await session.broadcast({
+                        "type": "leaderboard",
+                        "standings": standings_with_points,
+                        "totals": totals,
+                        "question_index": q_index + 1,
+                        "total_questions": len(session.quiz.questions)
+                    })
 
             elif msg.get("type") == "start2":
                 # Host clicks "Start Game" — begins the round loop
@@ -818,16 +921,15 @@ async def websocket_game(websocket: WebSocket, session_id: str):
         except Exception:
             pass
         import traceback
-        print(f"WebSocket error: {e}")
         traceback.print_exc()
 
 
 # ── Background session cleanup ──────────────────────────────────────────────
 
 async def _session_cleanup_loop():
-    """Remove empty sessions every 60s to free memory on Render."""
+    """Remove empty sessions every 5 minutes to free memory on Render."""
     while True:
-        await asyncio.sleep(60)
+        await asyncio.sleep(300)  # 5 minutes
         dead_sessions = []
         for sid, session in active_sessions.items():
             # Remove if no teams left (all players disconnected)
@@ -836,7 +938,6 @@ async def _session_cleanup_loop():
                 dead_sessions.append(sid)
         for sid in dead_sessions:
             del active_sessions[sid]
-            print(f"Cleaned up empty session: {sid}")
 
 
 @app.on_event("startup")
