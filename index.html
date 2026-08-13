@@ -89,7 +89,7 @@ h3{font-size:1.2rem;margin-bottom:10px}
 .q-item .q-actions button.up:hover,.q-item .q-actions button.down:hover{background:var(--accent3)}
 
 /* ── Question form ── */
-.q-form-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px}
+.q-form-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:99998;padding:20px}
 .q-form-overlay .q-form-card{background:var(--bg2);border:1px solid var(--bg3);border-radius:14px;padding:24px;width:100%;max-width:620px;max-height:90vh;overflow-y:auto}
 .q-form-card h3{margin-bottom:14px}
 .answer-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
@@ -306,10 +306,6 @@ h3{font-size:1.2rem;margin-bottom:10px}
       <h3>Create New Quiz</h3>
       <div class="card">
         <div class="form-group"><label>Quiz Name</label><input type="text" id="new-quiz-name" placeholder="e.g. General Knowledge"></div>
-        <div class="form-row">
-          <div class="form-group"><label>Max Teams</label><input type="number" id="new-quiz-max-teams" value="4" min="1" max="50"></div>
-          <div class="form-group"><label>Points per Tick</label><input type="number" id="new-quiz-points" value="4" min="1"></div>
-        </div>
         <button class="btn btn-success btn-block" id="btn-submit-quiz">Create</button>
       </div>
       <button class="btn btn-secondary" id="btn-cancel-quiz">Cancel</button>
@@ -322,7 +318,6 @@ h3{font-size:1.2rem;margin-bottom:10px}
         <div class="editor-header">
           <div>
             <h2 id="editor-quiz-name"></h2>
-            <span class="text-small" id="editor-quiz-info"></span>
           </div>
           <div style="display:flex;gap:8px">
             <button class="btn btn-secondary btn-small" id="btn-back-list">&#8592; Back</button>
@@ -330,10 +325,6 @@ h3{font-size:1.2rem;margin-bottom:10px}
           </div>
         </div>
         <div class="card">
-          <div class="form-row">
-            <div class="form-group"><label>Max Teams</label><input type="number" id="edit-max-teams" min="1"></div>
-            <div class="form-group"><label>Points per Tick</label><input type="number" id="edit-points-per-tick" min="1"></div>
-          </div>
           <button class="btn btn-primary btn-small" id="btn-save-settings">Save Settings</button>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
@@ -363,6 +354,21 @@ h3{font-size:1.2rem;margin-bottom:10px}
         <div style="margin-top:10px">
           <div style="font-weight:600;font-size:.88rem;margin-bottom:4px">Connected Teams:</div>
           <div class="team-list" id="ip-teams"></div>
+        </div>
+        <div style="margin-top:14px;border-top:1px solid var(--bg3);padding-top:10px">
+          <div style="font-weight:600;font-size:.88rem;margin-bottom:6px">Bot Teams (Testing)</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <input type="text" id="bot-name-input" placeholder="Bot name" style="flex:1;min-width:100px;padding:5px 8px;background:var(--bg);border:1px solid var(--bg3);border-radius:6px;color:var(--text);font-size:.85rem">
+            <select id="bot-accuracy" style="padding:5px 8px;background:var(--bg);border:1px solid var(--bg3);border-radius:6px;color:var(--text);font-size:.85rem">
+              <option value="0.8">80% correct</option>
+              <option value="0.5" selected>50% correct</option>
+              <option value="0.2">20% correct</option>
+              <option value="random">Random</option>
+            </select>
+            <button class="btn btn-success btn-small" id="btn-add-bot">&#129302; Add Bot</button>
+            <button class="btn btn-danger btn-small" id="btn-clear-bots">&#10005; Clear Bots</button>
+          </div>
+          <div id="bot-list" style="margin-top:6px;font-size:.82rem;color:var(--text2)"></div>
         </div>
       </div>
     </div>
@@ -407,7 +413,7 @@ h3{font-size:1.2rem;margin-bottom:10px}
         <div class="points" id="admin-result-points"></div>
         <div class="correct-answer" id="admin-correct-text"></div>
       </div>
-      <div id="admin-leaderboard-view" class="hs-leaderboard" style="display:none">
+<div id="admin-leaderboard-view" class="hs-leaderboard" style="display:none">
         <h2>Leaderboard</h2>
         <div class="lb-entries" id="admin-lb-entries"></div>
       </div>
@@ -456,6 +462,11 @@ h3{font-size:1.2rem;margin-bottom:10px}
       <button class="btn btn-danger mt-16" id="btn-end-session">End Session</button>
     </div>
   </div>
+  <div class="container" id="hs-waiting-view" style="display:none; text-align:center; padding:40px 0">
+    <h2>&#127760; Ready for Another Round?</h2>
+    <p style="color:var(--text2); margin:12px 0 20px;">Click "Start Round" to begin the next quiz</p>
+    <button class="btn btn-success btn-lg" id="btn-hs-start-new" style="padding:14px 40px;font-size:1.2rem">&#9654; Start Round</button>
+  </div>
   <div class="big-screen" id="big-screen">
     <div class="hs-timer-bar"><div class="hs-timer-fill" id="hs-timer-fill"></div></div>
     <div id="hs-question-view">
@@ -468,7 +479,7 @@ h3{font-size:1.2rem;margin-bottom:10px}
       <div class="points" id="hs-result-points"></div>
       <div class="correct-answer" id="hs-correct-text"></div>
     </div>
-    <div id="hs-leaderboard-view" class="hs-leaderboard" style="display:none">
+<div id="hs-leaderboard-view" class="hs-leaderboard" style="display:none">
       <h2>Leaderboard</h2>
       <div class="lb-entries" id="hs-lb-entries"></div>
     </div>
@@ -580,6 +591,7 @@ var adminSessionWs = null;
 var adminSessionId = null;
 var adminSelectedQuiz = null;
 var questions = [];
+var bots = [];
 
 function adminInit(){
   adminSetupTabs();
@@ -622,8 +634,7 @@ function renderQuizList(){
     grid.innerHTML = quizzes.map(function(q){
       return '<div class="quiz-card" data-name="'+q.name+'">'
         + '<h3>'+esc(q.name)+'</h3>'
-        + '<div class="meta">'+(q.question_count||0)+' questions  ·  Max '+ (q.max_teams||4)+' teams  ·  '
-        + (q.points_per_tick||4)+' pts/tick</div></div>';
+        + '<div class="meta">'+(q.question_count||0)+' questions</div></div>';
     }).join('');
     grid.querySelectorAll('.quiz-card').forEach(function(card){
       card.addEventListener('click', function(){ openQuiz(card.dataset.name); });
@@ -646,13 +657,11 @@ $('#btn-cancel-quiz').addEventListener('click', function(){
 });
 $('#btn-submit-quiz').addEventListener('click', function(){
   var name = $('#new-quiz-name').value.trim();
-  var max_teams = parseInt($('#new-quiz-max-teams').value) || 4;
-  var points_per_tick = parseInt($('#new-quiz-points').value) || 4;
   if(!name){ alert('Enter a quiz name'); return; }
   fetch(API + '/api/quizzes', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({name: name, max_teams: max_teams, points_per_tick: points_per_tick})
+    body: JSON.stringify({name: name})
   }).then(function(r){
     if(!r.ok) throw new Error('Failed to create quiz');
     return r.json();
@@ -691,9 +700,6 @@ function openQuiz(name){
     .then(function(quiz){
       adminSelectedQuiz = quiz.name;
       $('#editor-quiz-name').textContent = quiz.name;
-      $('#edit-max-teams').value = quiz.max_teams || 4;
-      $('#edit-points-per-tick').value = quiz.points_per_tick || 4;
-      $('#editor-quiz-info').textContent = 'Max teams: ' + (quiz.max_teams||4) + '  ·  Points per tick: ' + (quiz.points_per_tick||4);
       // Load questions from the quiz object
       questions = quiz.questions || [];
       renderQuestionList();
@@ -721,14 +727,9 @@ $('#btn-save-settings').addEventListener('click', function(){
   fetch(API + '/api/quizzes/' + encodeURIComponent(adminSelectedQuiz), {
     method: 'PUT',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({
-      max_teams: parseInt($('#edit-max-teams').value),
-      points_per_tick: parseInt($('#edit-points-per-tick').value)
-    })
+    body: JSON.stringify({})
   }).then(function(r){ return r.json(); })
     .then(function(d){
-      var quiz = d.quiz || d;
-      $('#editor-quiz-info').textContent = 'Max teams: ' + (quiz.max_teams||4) + '  ·  Points per tick: ' + (quiz.points_per_tick||4);
       alert('Settings saved!');
     })
     .catch(function(e){ alert('Error saving: ' + e.message); });
@@ -737,10 +738,12 @@ $('#btn-save-settings').addEventListener('click', function(){
 // ── Host from Editor ──
 $('#btn-host-quiz').addEventListener('click', function(){
   if(!adminSelectedQuiz){ alert('Select a quiz first'); return; }
-  // Pre-select the quiz in the host view
-  var sel = $('#host-quiz-select');
-  if(sel){ sel.value = adminSelectedQuiz; }
   navigate('host');
+  // Defer selection until loadQuizSelect populates options
+  setTimeout(function(){
+    var sel = $('#host-quiz-select');
+    if(sel) sel.value = adminSelectedQuiz;
+  }, 50);
 });
 
 // ── Question List ──
@@ -758,6 +761,7 @@ function renderQuestionList(){
       + '<span class="q-text">'+esc(q.question_text)+'</span>'
       + '<span class="q-type '+typeClass+'">'+(q.question_type||'text')+'</span>'
       + '<div class="q-actions">'
+      + '<button class="edit" title="Edit" data-action="edit" data-index="'+i+'">&#9998;</button>'
       + '<button class="up" title="Move up" data-action="up" data-index="'+i+'">&#8593;</button>'
       + '<button class="down" title="Move down" data-action="down" data-index="'+i+'">&#8595;</button>'
       + '<button class="del" title="Delete" data-action="delete" data-index="'+i+'">&#10005;</button>'
@@ -798,10 +802,14 @@ function renderQuestionList(){
   // Action buttons
   list.querySelectorAll('.q-actions button').forEach(function(btn){
     btn.addEventListener('click', function(e){
+      e.preventDefault();
       e.stopPropagation();
       var action = btn.dataset.action;
       var idx = parseInt(btn.dataset.index);
-      if(action === 'delete'){
+      if(action === 'edit'){
+        openQuestionForm(questions[idx], idx);
+        return;
+      } else if(action === 'delete'){
         if(!confirm('Delete this question?')) return;
         fetch(API + '/api/quizzes/' + encodeURIComponent(adminSelectedQuiz) + '/questions/' + questions[idx].id, {method:'DELETE'})
           .then(function(r){
@@ -852,13 +860,15 @@ function openQuestionForm(q, idx){
   $('#q-text').value = (q && q.question_text) ? q.question_text : '';
   $('#q-category').value = (q && q.category) ? q.category : '';
   $('#q-timer').value = (q && q.timer_seconds) ? q.timer_seconds : 20;
-  var opts = (q && q.options) ? q.options : [];
+  var rawOpts = (q && q.options) ? q.options : [];
+  // Options can be strings or {id, text} objects
+  var opts = rawOpts.map(function(o){ return (typeof o === 'string') ? o : (o && o.text) || ''; });
   $('#q-ans-0').value = opts[0] || '';
   $('#q-ans-1').value = opts[1] || '';
   $('#q-ans-2').value = opts[2] || '';
   $('#q-ans-3').value = opts[3] || '';
   // FIX: proper ternary/message without optional chaining on ternary result
-  var _el = (q && q.answer !== undefined) ? $('input[name=correctAns][value='+q.answer+']') : null;
+  var _el = (q && q.answer !== undefined) ? $('input[name=correctAns][value="'+q.answer+'"]') : null;
   if (_el) _el.checked = true;
   $('#q-edit-id').value = (q && q.id) ? q.id : '';
   // Preview media
@@ -868,14 +878,16 @@ function openQuestionForm(q, idx){
   }
   mediaFileKey = (q && q.media_key) ? q.media_key : null;
   // Render preview in dropzone
-  var dzPreview = dropzone.querySelector('.dz-preview');
-  var dzLabel = dropzone.querySelector('.dz-label');
-  if(mediaHtml){
-    dzPreview.innerHTML = mediaHtml + '<div class="text-small mt-10">Click to replace</div>';
-    dzLabel.style.display = 'none';
-  } else {
-    dzPreview.innerHTML = '';
-    dzLabel.style.display = 'block';
+  if(dropzone){
+    var dzPreview = dropzone.querySelector('.dz-preview');
+    var dzLabel = dropzone.querySelector('.dz-label');
+    if(mediaHtml){
+      dzPreview.innerHTML = mediaHtml + '<div class="text-small mt-10">Click to replace</div>';
+      if(dzLabel) dzLabel.style.display = 'none';
+    } else {
+      dzPreview.innerHTML = '';
+      if(dzLabel) dzLabel.style.display = 'block';
+    }
   }
   $('#q-form-overlay').style.display = 'flex';
 }
@@ -895,19 +907,27 @@ $('#q-form-save').addEventListener('click', function(){
     options: ans,
     answer: parseInt(correct)
   };
+  // Use PUT for editing (has an ID), POST for adding new
+  var editId = $('#q-edit-id').value;
+  if(editId) {
+    data.id = parseInt(editId);
+  }
   if(mediaFileKey){
     data.media_key = mediaFileKey;
   }
-  var url = API + '/api/quizzes/' + encodeURIComponent(adminSelectedQuiz) + '/questions';
+  var url = editId
+    ? API + '/api/quizzes/' + encodeURIComponent(adminSelectedQuiz) + '/questions/' + editId
+    : API + '/api/quizzes/' + encodeURIComponent(adminSelectedQuiz) + '/questions';
+  var method = editId ? 'PUT' : 'POST';
   fetch(url, {
-    method: 'POST',
+    method: method,
     headers:{'Content-Type':'application/json'},
     body: JSON.stringify(data)
   }).then(function(r){
     if(!r.ok) throw new Error('Failed to save question');
     return r.json();
   }).then(function(){
-    // Reload questions
+    // Reload questions to get updated list
     return fetch(API + '/api/quizzes/' + encodeURIComponent(adminSelectedQuiz));
   }).then(function(r){ return r.json(); }).then(function(quiz){
     questions = quiz.questions || [];
@@ -963,6 +983,11 @@ $('#admin-next-q').addEventListener('click', function(){
 });
 $('#admin-show-lb').addEventListener('click', function(){
   if(adminSessionWs) adminSessionWs.send(JSON.stringify({type:'leaderboard'}));
+  $('#admin-leaderboard-view').style.display = '';
+  $('#admin-leaderboard-history').style.display = 'none';
+  $('#admin-question-view').style.display = 'none';
+  $('#admin-result-view').style.display = 'none';
+  $('#admin-final-view').style.display = 'none';
 });
 $('#admin-end').addEventListener('click', function(){
   if(adminSessionWs) adminSessionWs.send(JSON.stringify({type:'end'}));
@@ -1241,9 +1266,12 @@ $('#btn-host-show-lb').addEventListener('click', function(){
   if(adminSessionWs) adminSessionWs.send(JSON.stringify({type:'leaderboard'}));
 });
 $('#btn-host-end').addEventListener('click', function(){
-  if(hostWs){ hostWs.send(JSON.stringify({type:'end'})); hostWs.close(); hostWs = null; }
-  if(adminSessionWs){ adminSessionWs.send(JSON.stringify({type:'end'})); adminSessionWs.close(); adminSessionWs = null; }
-  hostResetUI();
+  // Send end to both connections so server broadcasts final standings
+  if(hostWs){ hostWs.send(JSON.stringify({type:'end'})); }
+  if(adminSessionWs){ adminSessionWs.send(JSON.stringify({type:'end'})); }
+  // Don't reset UI yet - wait for final_standings to render winners/losers
+  hostState = 'final';
+  $('#hs-controls').style.display = 'none';
 });
 
 function hostResetUI(){
@@ -1355,7 +1383,7 @@ function handleHostMessage(msg){
       $('#btn-host-end').style.display = 'block';
       break;
     case 'team_disconnected':
-      var tc = $('#host-teams-count');
+      var tc = $('#host-team-count');
       if(tc) tc.textContent = msg.count;
       break;
     case 'end_game':
@@ -1507,9 +1535,23 @@ function showFinal(msg){
   
   clearInterval(timerInterval);
   
-  // Hide the standings list container
+  // Show full standings list (winners vs losers)
   var entriesEl = $('#hs-final-entries');
-  if(entriesEl) entriesEl.style.display = 'none';
+  if(entriesEl){
+    var html = '';
+    standings.forEach(function(s, i){
+      var rank = (i+1) + '.';
+      html += '<div class="lb-entry'+(i===0?' lb-first':'')+'">'
+        + '<div class="lb-pos" style="width:30px;text-align:center;font-weight:700">'+rank+'</div>'
+        + '<div class="lb-team" style="flex:1">'+esc(s.team)+'</div>'
+        + '<div class="lb-score">'+s.points+' pts</div>'
+        + (i===0?' <span style="color:#FFD700;margin-left:8px">WINNER</span>':'')
+        + (i>=standings.length-2 && standings.length>3?' <span style="color:var(--text3);margin-left:8px;font-size:0.85rem">eliminated</span>':'')
+        + '</div>';
+    });
+    entriesEl.innerHTML = html;
+    entriesEl.style.display = 'flex';
+  }
   
   // Auto-hide after 15 seconds or wait for user action
   var autoTimer = setTimeout(function(){
@@ -1522,8 +1564,8 @@ function showFinal(msg){
   var btnPlayAgain = document.getElementById('btn-host-play-again');
   if(btnPlayAgain){
     btnPlayAgain.onclick = function(){
-      if(hostSessionWs){
-        hostSessionWs.send(JSON.stringify({type:'start2'}));
+      if(hostWs){
+        hostWs.send(JSON.stringify({type:'start2'}));
         $('#hs-final-view').style.display = 'none';
         $('#hs-waiting-view').style.display = '';
       }
@@ -1534,6 +1576,16 @@ function showFinal(msg){
     btnNewQuiz.onclick = function(){
       navigate('admin');
       stopConfetti();
+    };
+  }
+  var btnHsStart = document.getElementById('btn-hs-start-new');
+  if(btnHsStart){
+    btnHsStart.onclick = function(){
+      if(hostWs){
+        hostWs.send(JSON.stringify({type:'start2'}));
+        $('#hs-waiting-view').style.display = 'none';
+        $('#big-screen').addClass('active');
+      }
     };
   }
 }
@@ -1685,9 +1737,23 @@ function showAdminFinal(msg){
         + '<div class="podium-bar third"></div>'
       + '</div>';
   }
-  // Hide the standings list container
+  // Show full standings list (winners vs losers)
   var entriesEl = $('#admin-final-entries');
-  if(entriesEl) entriesEl.style.display = 'none';
+  if(entriesEl){
+    var html = '';
+    standings.forEach(function(s, i){
+      var rank = (i+1) + '.';
+      html += '<div class="lb-entry'+(i===0?' lb-first':'')+'">'
+        + '<div class="lb-pos" style="width:30px;text-align:center;font-weight:700">'+rank+'</div>'
+        + '<div class="lb-team" style="flex:1">'+esc(s.team)+'</div>'
+        + '<div class="lb-score">'+s.points+' pts</div>'
+        + (i===0?' <span style="color:#FFD700;margin-left:8px">WINNER</span>':'')
+        + (i>=standings.length-2 && standings.length>3?' <span style="color:var(--text3);margin-left:8px;font-size:0.85rem">eliminated</span>':'')
+        + '</div>';
+    });
+    entriesEl.innerHTML = html;
+    entriesEl.style.display = 'flex';
+  }
   clearInterval(adminTimerInterval);
 }
 
@@ -1704,6 +1770,7 @@ var timerInterval = null;
 var countdownSeconds = 0;
 var currentQuestion = null;
 var playerAnswered = false;
+var playerConnectionKey = null;
 
 function playerInit(){
   $('#player-join').style.display = '';
@@ -1717,7 +1784,7 @@ function playerInit(){
   if(urlSession){ $('#player-session-id').value = urlSession; playerSessionId = urlSession; }
 }
 
-function connectPlayerWS(sessionId){
+function connectPlayerWS(sessionId, savedConnectionKey){
   if(!sessionId){ alert('Enter the session code shown on the host screen'); return; }
   var scheme = location.protocol==='https:'?'wss:':'ws:';
   playerWs = new WebSocket(scheme + '//' + location.host + '/ws/' + sessionId);
@@ -1744,10 +1811,11 @@ function connectPlayerWS(sessionId){
     // Attempt reconnect after a short delay
     var savedSessionId = playerSessionId;
     var savedTeamName = playerName;
+    var savedConnectionKey = playerConnectionKey;
     setTimeout(function(){
       if(playerState === 'waiting' || playerState === 'question'){
         console.log('Attempting to reconnect player...');
-        connectPlayerWS(savedSessionId);
+        connectPlayerWS(savedSessionId, savedConnectionKey);
       }
     }, 3000);
   };
@@ -1775,7 +1843,7 @@ window.addEventListener('load', function(){
       setTimeout(function(){
         playerName = prompt('Enter your team name:') || ('Team ' + Math.floor(Math.random()*1000));
         playerName = playerName.trim() || ('Team ' + Math.floor(Math.random()*1000));
-        connectPlayerWS(urlSession);
+        connectPlayerWS(urlSession, null);
       }, 500);
     }
   }
@@ -1838,6 +1906,70 @@ function handlePlayerMessage(msg){
       showPlayerFinal(msg);
       break;
     case 'error': alert('Error: '+msg.message); break;
+    case 'timer_start':
+      clearInterval(timerInterval);
+      if(playerState === 'question'){
+        var total = msg.timer_seconds || 20;
+        var serverTime = msg.server_time || null;
+        countdownSeconds = total;
+        questionStartTime = serverTime ? serverTime * 1000 : Date.now();
+        var fill = $('#ps-timer-fill');
+        fill.style.width = '100%';
+        fill.style.background = 'var(--green)';
+        $('#ps-timer-text').textContent = countdownSeconds + 's';
+        timerInterval = setInterval(function(){
+          if(countdownSeconds <= 0 || playerState !== 'question'){
+            clearInterval(timerInterval);
+            fill.style.width = '0%';
+            return;
+          }
+          var pct2 = (countdownSeconds/total)*100;
+          fill.style.width = pct2+'%';
+          fill.style.background = countdownSeconds > total*0.5 ? 'var(--green)' : (countdownSeconds > total*0.25 ? 'var(--accent)' : 'var(--red)');
+          $('#ps-timer-text').textContent = countdownSeconds + 's';
+          countdownSeconds--;
+        }, 1000);
+      }
+      break;
+    case 'timer_tick':
+      if(playerState === 'question' && timerInterval){
+        countdownSeconds = msg.seconds_remaining;
+        var total2 = msg.total_seconds || 20;
+        var fill2 = $('#ps-timer-fill');
+        fill2.style.width = Math.max(0,(countdownSeconds/total2)*100)+'%';
+        fill2.style.background = countdownSeconds > total2*0.5 ? 'var(--green)' : (countdownSeconds > total2*0.25 ? 'var(--accent)' : 'var(--red)');
+        $('#ps-timer-text').textContent = Math.max(0,countdownSeconds) + 's';
+      }
+      break;
+    case 'reconnected':
+      console.log('Reconnected as:', msg.team_name);
+      $('#ps-connected').textContent = 'Connected';
+      $('#ps-connected').style.color = 'var(--green)';
+      break;
+    case 'session_snapshot':
+      playerState = msg.state || 'waiting';
+      $('#player-join').style.display = 'none';
+      $('#player-screen').classList.add('active');
+      if(msg.state === 'question'){
+        $('#ps-waiting').style.display = 'none';
+        $('#ps-question-view').style.display = '';
+        $('#ps-result-view').style.display = 'none';
+        $('#ps-leaderboard').style.display = 'none';
+        $('#ps-final').style.display = 'none';
+      } else if(msg.state === 'result'){
+        $('#ps-waiting').style.display = 'none';
+        $('#ps-question-view').style.display = 'none';
+        $('#ps-result-view').style.display = '';
+      } else if(msg.state === 'final'){
+        $('#ps-waiting').style.display = 'none';
+        $('#ps-final').style.display = '';
+      } else {
+        $('#ps-waiting').style.display = '';
+      }
+      break;
+    case 'state_sync':
+      playerState = msg.state;
+      break;
   }
 }
 
@@ -2179,6 +2311,17 @@ function spawnFinalEmojis(standings){
   }
 }
 
+
+// ═══════════════════════════════════════════
+//  Leaderboard History Rendering
+// ═══════════════════════════════════════════
+function updateBotList(){
+  var el = $('#bot-list');
+  if(!bots.length){ el.textContent = 'No bots added'; return; }
+  el.innerHTML = bots.map(function(b){
+    return '<span class="badge badge-idle" style="margin-right:4px">'+esc(b.name)+'</span>';
+  }).join(' ');
+}
 
 // ── HTML Escaping ──
 function esc(str){

@@ -3,9 +3,11 @@ PubQuiz Arena — FastAPI backend with WebSocket game engine.
 """
 
 import asyncio
+import time
 import json
-import os
+import random
 import re
+import sqlite3
 import uuid
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
@@ -19,9 +21,74 @@ from fastapi.responses import HTMLResponse, FileResponse
 BASE_DIR = Path(__file__).parent
 QUIZZES_DIR = BASE_DIR / "quizzes"
 MEDIA_DIR = BASE_DIR / "media"
+DB_PATH = BASE_DIR / "gamenight.db"
 FRONTEND_FILE = BASE_DIR / "index.html"
 QUIZZES_DIR.mkdir(exist_ok=True)
 MEDIA_DIR.mkdir(exist_ok=True)
+
+# ── Database setup ─────────────────────────────────────────────────────────
+
+def get_db():
+    """Get a SQLite connection with foreign keys enabled."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
+def init_db():
+    """Create the SQLite schema if it doesn't exist."""
+    conn = get_db()
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS quizzes (
+            name TEXT PRIMARY KEY,
+            max_teams INTEGER NOT NULL DEFAULT 4,
+            points_per_tick REAL NOT NULL DEFAULT 4.0,
+            questions_json TEXT NOT NULL DEFAULT '[]'
+        );
+    """)
+    conn.commit()
+    conn.close()
+
+
+init_db()
+
+
+def _load_quiz_from_db(name: str) -> Optional[dict]:
+    """Load a quiz dict from the SQLite database."""
+    conn = get_db()
+    cur = conn.execute("SELECT name, max_teams, points_per_tick, questions_json FROM quizzes WHERE name = ?", (name,))
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        return None
+    return {"name": row[0], "max_teams": row[1], "points_per_tick": row[2], "questions": json.loads(row[3] or "[]")}
+
+
+def _save_quiz_to_db(quiz: "Quiz") -> None:
+    """Save a quiz dict to the SQLite database."""
+    conn = get_db()
+    conn.execute(
+        "INSERT OR REPLACE INTO quizzes (name, max_teams, points_per_tick, questions_json) VALUES (?, ?, ?, ?)",
+        (quiz.name, quiz.max_teams, quiz.points_per_tick, json.dumps(quiz.questions or [])),
+    )
+    conn.commit()
+    conn.close()
+
+
+def _delete_quiz_from_db(name: str) -> None:
+    conn = get_db()
+    conn.execute("DELETE FROM quizzes WHERE name = ?", (name,))
+    conn.commit()
+    conn.close()
+
+
+def _list_quizzes_from_db() -> list[str]:
+    conn = get_db()
+    cur = conn.execute("SELECT name FROM quizzes ORDER BY name")
+    names = [row[0] for row in cur.fetchall()]
+    conn.close()
+    return names
+
 
 # ── Data models ────────────────────────────────────────────────────────────
 
@@ -44,29 +111,23 @@ class Question:
 @dataclass
 class Quiz:
     name: str
-    max_teams: int = 4
+    max_teams: int = 4  # Kept for DB compatibility but unused
     points_per_tick: float = 4.0
     questions: list = field(default_factory=list)   # list of Question dicts
 
     def save(self):
-        QUIZZES_DIR.mkdir(parents=True, exist_ok=True)
-        path = QUIZZES_DIR / f"{self.name}.json"
-        with open(path, "w") as f:
-            json.dump(asdict(self), f, indent=2)
+        _save_quiz_to_db(self)
 
     @classmethod
     def load(cls, name: str) -> Optional["Quiz"]:
-        path = QUIZZES_DIR / f"{name}.json"
-        if not path.exists():
+        data = _load_quiz_from_db(name)
+        if not data:
             return None
-        with open(path) as f:
-            data = json.load(f)
         return cls(**data)
 
     @classmethod
     def list_all(cls) -> list[str]:
-        files = QUIZZES_DIR.glob("*.json")
-        return sorted(f.stem for f in files)
+        return _list_quizzes_from_db()
 
 
 @dataclass
@@ -77,6 +138,13 @@ class TeamInfo:
     answer_time: float = 0.0   # relative to question start (seconds)
     points: int = 0
     connected_since: Optional[float] = None
+    # For reconnection support
+    connection_key: Optional[str] = None
+    # Bot support
+    is_bot: bool = False
+    bot_answer_delay: float = 0.0   # seconds to wait before answering
+    bot_answer_id: Optional[str] = None
+    bot_task: Optional[asyncio.Task] = None  # Running bot task handle
 
 
 # ── Game session ───────────────────────────────────────────────────────────
@@ -85,7 +153,6 @@ class GameSession:
     """Manages a single game session (one quiz, one round at a time)."""
 
     def __init__(self, quiz: Quiz):
-        import random
         # Generate 3-digit numeric session code (000-999)
         self.session_id = str(random.randint(0, 999)).zfill(3)
         self.quiz = quiz
@@ -101,10 +168,15 @@ class GameSession:
         self._advance_event = asyncio.Event()  # Signal to go to next question
         self._stop_event = asyncio.Event()     # Signal to stop the game
         self._timer_started = False            # Track if timer has started
+        # Leaderboard history: list of per-question standings snapshots
+        self.leaderboard_history: list[dict] = []
+        # Track disconnected players for reconnection
+        self.disconnected_keys: dict[str, TeamInfo] = {}
 
     # ── Team management ──────────────────────────────────────────────────
 
-    async def add_team(self, socket: WebSocket, name: str) -> bool:
+    async def add_team(self, socket: WebSocket, name: str, is_bot: bool = False,
+                       bot_delay: float = 0.0, bot_answer: str = None) -> bool:
         """Add a team. Returns True if accepted."""
         # Accept joins even during connecting/question/result/final states
         if self.state not in ("idle", "connecting", "question", "result", "final"):
@@ -112,9 +184,6 @@ class GameSession:
             return False
         if name in self.teams:
             await socket.send_json({"type": "error", "message": "Team name already taken"})
-            return False
-        if len(self.teams) >= self.quiz.max_teams:
-            await socket.send_json({"type": "error", "message": "Max teams reached"})
             return False
         self.cumulative_scores[name] = 0
         team = TeamInfo(socket=socket, name=name, connected_since=asyncio.get_running_loop().time())
@@ -124,10 +193,47 @@ class GameSession:
             "type": "teams_updated",
             "teams": [{"name": t.name, "socket_key": k} for k, t in self.teams.items()],
             "count": len(self.teams),
-            "max": self.quiz.max_teams
         })
         # Tell a joining player they're in
         await socket.send_json({"type": "joined", "team_name": name, "quiz_name": self.quiz.name})
+        return True
+
+    async def add_bot_team(self, name: str, bot_delay: float = None, bot_answer: str = None) -> bool:
+        """Add a bot team for testing. Bots answer automatically after a delay."""
+        if name in self.teams:
+            return False
+        self.cumulative_scores[name] = 0
+        # Bots don't need a real WebSocket, but we use None and a special handler
+        team = TeamInfo(
+            socket=None, name=name, connected_since=asyncio.get_running_loop().time(),
+            is_bot=True,
+            bot_answer_delay=bot_delay or random.uniform(2.0, 8.0),
+            bot_answer_id=bot_answer,
+        )
+        self.teams[name] = team
+        await self.broadcast({
+            "type": "teams_updated",
+            "teams": [{"name": t.name, "socket_key": k} for k, t in self.teams.items()],
+            "count": len(self.teams),
+            "is_bot": name
+        })
+        return True
+
+    async def remove_bot_team(self, name: str) -> bool:
+        """Remove a bot team."""
+        if name not in self.teams:
+            return False
+        if not self.teams[name].is_bot:
+            return False
+        if self.teams[name].bot_task:
+            self.teams[name].bot_task.cancel()
+        del self.teams[name]
+        del self.cumulative_scores[name]
+        await self.broadcast({
+            "type": "teams_updated",
+            "teams": [{"name": t.name, "socket_key": k} for k, t in self.teams.items()],
+            "count": len(self.teams),
+        })
         return True
 
     # ── Game play ──────────────────────────────────────────────────────────
@@ -153,43 +259,60 @@ class GameSession:
 
     async def _collect_answers(self, timeout: int):
         """Wait for all teams to answer, or timeout, or host clicks next."""
-        # Get real player teams (exclude host)
-        player_teams = {k: v for k, v in self.teams.items() if v.name != "Host"}
+        # Get real player teams (exclude host and bots)
+        player_teams = {k: v for k, v in self.teams.items() if v.name != "Host" and not v.is_bot}
         total_players = len(player_teams)
-        
-        # Use a LOCAL event for "host clicked next" to avoid race conditions
-        # This event is ONLY checked inside this method, so we never miss clicks
+
         next_click_event = asyncio.Event()
-        
-        # Wrapper that translates _advance_event to our local next_click_event
+
         async def listen_for_next():
             await self._advance_event.wait()
             self._advance_event.clear()
             next_click_event.set()
-        
-        # Start listening for next clicks immediately
+
         next_listener = asyncio.create_task(listen_for_next())
-        
-        # Create a finish event that will be set when either:
-        # 1. The timeout occurs (via timeout_task)
-        # 2. The host clicks Next (via next_click_event)
+
         finish_event = asyncio.Event()
-        
-        # Schedule timeout to set the event
+
         async def on_timeout():
             await asyncio.sleep(timeout)
             finish_event.set()
-        
-        # When host clicks next, set finish event
+
         async def on_next():
             await next_click_event.wait()
             finish_event.set()
-        
-        # Start both tasks
+
         timeout_task = asyncio.create_task(on_timeout())
         next_task = asyncio.create_task(on_next())
-        
-        # Poll for answers while waiting
+
+        # Start bot answer timers for current question
+        bot_tasks = []
+        for t in self.teams.values():
+            if t.is_bot and t.answer is None:
+                bot_task = asyncio.create_task(self._bot_answer(t))
+                bot_tasks.append(bot_task)
+                t.bot_task = bot_task
+
+        # Timer tick task (Improvement 1 & 6)
+        async def timer_ticks():
+            elapsed = 0
+            while not finish_event.is_set() and not self._stop_event.is_set():
+                await asyncio.sleep(1)
+                elapsed += 1
+                remaining = max(0, timeout - elapsed)
+                server_time_now = time.time()
+                await self.broadcast({
+                    "type": "timer_tick",
+                    "seconds_remaining": remaining,
+                    "total_seconds": timeout,
+                    "server_time": server_time_now,
+                    "elapsed": round(elapsed, 1)
+                })
+                if remaining <= 0:
+                    break
+
+        timer_task = asyncio.create_task(timer_ticks())
+
         while not finish_event.is_set() and not self._stop_event.is_set():
             answered = sum(1 for t in player_teams.values() if t.answer)
             if answered != self.answers_collected:
@@ -199,22 +322,39 @@ class GameSession:
                     "count": self.answers_collected,
                     "total": total_players
                 })
-            
-            # Wait a short time before checking again
             await asyncio.sleep(0.2)
-        
-        # Cancel all tasks
+
         timeout_task.cancel()
         next_task.cancel()
         next_listener.cancel()
-        
-        # Clear the advance event so the round_loop can use it for the NEXT question's "Next" click
+        timer_task.cancel()
+        for bt in bot_tasks:
+            bt.cancel()
+
         self._advance_event.clear()
-        
-        # Send result if not already sent (from receive_answer or timeout)
+
         if not self.result_sent:
             await self._send_result()
 
+    async def _bot_answer(self, team: TeamInfo):
+        try:
+            delay = team.bot_answer_delay
+            await asyncio.sleep(delay)
+            if team.answer is not None:
+                return
+            if team.bot_answer_id:
+                answer = team.bot_answer_id
+            else:
+                current_q = self.get_current_question()
+                if current_q and current_q.get("options"):
+                    options = current_q["options"]
+                    idx = random.randint(0, len(options) - 1)
+                    answer = str(options[idx].get("id", idx)) if isinstance(options[idx], dict) else str(idx)
+                else:
+                    answer = "a"
+            await self.receive_answer(team.name, answer, round(delay, 1))
+        except asyncio.CancelledError:
+            pass
     async def receive_answer(self, team_name: str, answer_id, elapsed: float):
         async with self._lock:
             # Ignore answers from host or non-existent teams
@@ -260,24 +400,24 @@ class GameSession:
 
                 q = q_list[self.current_question_idx]
 
-                # Broadcast question first so clients can render it
+                # Set wall-clock start time BEFORE sending messages
+                self._timer_started = True
+                self.question_start_time = time.time()
+
+                # Broadcast question + timer start together
                 await self.broadcast({
                     "type": "go_to_question",
                     "question_index": self.current_question_idx,
                     "question": q,
                     "total_questions": len(q_list),
-                    "timer_seconds": q["timer_seconds"]
+                    "timer_seconds": q["timer_seconds"],
+                    "server_time": self.question_start_time
                 })
-
-                # Timer starts automatically
-                self._timer_started = True
-                self.question_start_time = asyncio.get_running_loop().time()
-
-                # Broadcast timer started
                 await self.broadcast({
                     "type": "timer_start",
                     "question_index": self.current_question_idx,
-                    "timer_seconds": q["timer_seconds"]
+                    "timer_seconds": q["timer_seconds"],
+                    "server_time": self.question_start_time
                 })
 
                 # Wait for either timeout or all answered
@@ -324,6 +464,17 @@ class GameSession:
             "total": total_players
         })
 
+    @staticmethod
+    def _calc_score(elapsed: float, q_timer: int) -> int:
+        """Progressive (curved) 200→50 in first half, then linear 50→0 in second half.
+        At 0s: 200, at 50% timer: 50, at 100% timer: 0.
+        Answers just before timeout still get 1 point (not 0)."""
+        half = max(q_timer * 0.5, 1)
+        if elapsed <= half:
+            return int(50 + 150 * max(0, 1 - elapsed / half) ** 2)
+        else:
+            return int(50 * max(0, 1 - (elapsed - half) / half))
+
     async def _send_result(self):
         if self.result_sent:
             return
@@ -337,47 +488,48 @@ class GameSession:
         q_index = self.current_question_idx
         player_teams = {k: v for k, v in self.teams.items() if v.name != "Host"}
         for name, team in player_teams.items():
-            is_correct = False
-            if team.answer is not None:
-                qa = q["answer"]
-                # Normalize: quiz answer may be int index or string option id
-                if isinstance(qa, int):
-                    # Convert string answer_id to index if possible
-                    if isinstance(team.answer, str):
-                        # Check if team.answer is a string index ("0", "1", etc.)
-                        try:
-                            str_idx = int(team.answer)
-                            if str_idx == qa:
-                                is_correct = True
-                        except ValueError:
-                            pass
-                        # Also check if it's an option ID letter
-                        if not is_correct:
-                            for idx, opt in enumerate(q.get("options", [])):
-                                if str(opt.get("id", "")) == team.answer:
-                                    if idx == qa:
-                                        is_correct = True
-                                    break
+            try:
+                is_correct = False
+                if team.answer is not None:
+                    qa = q["answer"]
+                    # Normalize: quiz answer may be int index or string option id
+                    if isinstance(qa, int):
+                        # Convert string answer_id to index if possible
+                        if isinstance(team.answer, str):
+                            try:
+                                str_idx = int(team.answer)
+                                if str_idx == qa:
+                                    is_correct = True
+                            except ValueError:
+                                pass
+                            if not is_correct:
+                                for idx, opt in enumerate(q.get("options", [])):
+                                    opt_id = opt if isinstance(opt, str) else (opt.get("id", "") if isinstance(opt, dict) else "")
+                                    if str(opt_id) == team.answer:
+                                        if idx == qa:
+                                            is_correct = True
+                                        break
+                        else:
+                            is_correct = int(team.answer) == qa
                     else:
-                        is_correct = int(team.answer) == qa
-                else:
-                    # qa is a string (option id)
-                    is_correct = str(team.answer) == str(qa)
-            points = 0
-            if is_correct:
-                elapsed = team.answer_time or 0
-                # Normalize scoring to 200 points max, based on elapsed time relative to question duration
-                # This ensures answering at 5s gives same points whether question is 10s or 20s
-                q_timer = max(q.get("timer_seconds", 10), 1)
-                points = int(200 * max(0, 1 - elapsed / q_timer) ** 2.5)
-            self.cumulative_scores[name] = self.cumulative_scores.get(name, 0) + points
-            results.append({
-                "team": name,
-                "answer": team.answer,
-                "is_correct": is_correct,
-                "points": points,
-                "time_used": round(team.answer_time, 1) if team.answer_time else None
-            })
+                        is_correct = str(team.answer) == str(qa)
+                points = 0
+                if is_correct:
+                    elapsed = team.answer_time or 0
+                    q_timer = max(q.get("timer_seconds", 10), 1)
+                    points = GameSession._calc_score(elapsed, q_timer)
+                print(f"[SCORE] {name}: answer={team.answer!r} qa={qa!r} correct={is_correct} points={points}", flush=True)
+                self.cumulative_scores[name] = self.cumulative_scores.get(name, 0) + points
+                results.append({
+                    "team": name,
+                    "answer": team.answer,
+                    "is_correct": is_correct,
+                    "points": points,
+                    "time_used": round(team.answer_time, 1) if team.answer_time else None
+                })
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
 
         totals = {name: self.cumulative_scores.get(name, 0) for name in player_teams}
 
@@ -411,6 +563,12 @@ class GameSession:
             "total_questions": len(self.quiz.questions),
             "queue_seconds": 8
         })
+        # Record leaderboard history (Improvement 8)
+        if not self.result_sent:
+            self.leaderboard_history.append({
+                'question_index': q_index + 1,
+                'standings': standings_with_points
+            })
 
     def _get_running_totals(self) -> dict:
         """Get cumulative scores across all questions played."""
@@ -802,6 +960,11 @@ async def websocket_game(websocket: WebSocket, session_id: str):
 
             if msg.get("type") == "join":
                 team_name = msg.get("team_name", "Player")
+                # Generate connection key for reconnection
+                conn_key = str(uuid.uuid4())[:12]
+                team = session.teams.get(team_name)
+                if team:
+                    team.connection_key = conn_key
                 await session.add_team(websocket, team_name)
 
             elif msg.get("type") == "answer":
@@ -856,7 +1019,8 @@ async def websocket_game(websocket: WebSocket, session_id: str):
                         points = 0
                         if is_correct:
                             elapsed = team.answer_time or 0
-                            points = int(200 * max(0, 1 - elapsed/20) ** 2.5)
+                            q_timer = max(q.get("timer_seconds", 20), 1)
+                            points = GameSession._calc_score(elapsed, q_timer)
                         results.append({"team": name, "points": points, "is_correct": is_correct, "time_used": round(team.answer_time, 1) if team.answer_time else None})
                     # Sort by points descending
                     results.sort(key=lambda r: (-r["points"], r["team"]))
@@ -891,10 +1055,102 @@ async def websocket_game(websocket: WebSocket, session_id: str):
                 asyncio.create_task(session.round_loop(websocket))
 
             elif msg.get("type") == "end":
-                if not session.result_sent:
-                    await session._send_result()
+                # Immediately go to final standings (winners vs losers screen)
+                await session._send_final()
                 session._stop_event.set()
                 break
+
+            # ── Reconnection (Improvement 7) ──
+            elif msg.get("type") == "reconnect":
+                conn_key = msg.get("connection_key")
+                if not conn_key:
+                    await websocket.send_json({"type": "error", "message": "No connection_key"})
+                    continue
+                team = None
+                team_key = None
+                if conn_key in session.disconnected_keys:
+                    team = session.disconnected_keys[conn_key]
+                    team.socket = websocket
+                    team.connected_since = asyncio.get_running_loop().time()
+                    del session.disconnected_keys[conn_key]
+                    for k, t in session.teams.items():
+                        if t is team:
+                            team_key = k
+                            break
+                else:
+                    for k, t in session.teams.items():
+                        if t.connection_key == conn_key and t.name != "Host":
+                            team = t
+                            team.socket = websocket
+                            team.connected_since = asyncio.get_running_loop().time()
+                            team_key = k
+                            break
+                if not team:
+                    await websocket.send_json({"type": "error", "message": "Team not found for reconnection"})
+                    continue
+                await websocket.send_json({"type": "reconnected", "team_name": team.name})
+                await websocket.send_json({
+                    "type": "session_snapshot",
+                    "session_id": session.session_id,
+                    "quiz_name": session.quiz.name,
+                    "state": session.state,
+                    "current_question_index": session.current_question_idx,
+                    "teams": [{"name": t.name, "socket_key": k, "is_bot": t.is_bot} for k, t in session.teams.items()],
+                    "cumulative_scores": session.cumulative_scores,
+                    "leaderboard_history": session.leaderboard_history,
+                    "is_host": team.name == "Host"
+                })
+                if session.state == "question" and session._timer_started:
+                    current_q = session.get_current_question()
+                    if current_q:
+                        elapsed_since_start = time.time() - session.question_start_time
+                        remaining = max(0, current_q["timer_seconds"] - elapsed_since_start)
+                        await websocket.send_json({
+                            "type": "timer_start",
+                            "question_index": session.current_question_idx,
+                            "timer_seconds": current_q["timer_seconds"],
+                            "server_time": session.question_start_time
+                        })
+                        await websocket.send_json({
+                            "type": "timer_tick",
+                            "seconds_remaining": int(remaining),
+                            "total_seconds": current_q["timer_seconds"],
+                            "server_time": session.question_start_time,
+                            "elapsed": round(elapsed_since_start, 1)
+                        })
+                elif session.state in ("result", "final"):
+                    await websocket.send_json({"type": "state_sync", "state": session.state})
+                session.teams[team_key or team.name].socket = websocket
+                continue
+
+            # ── Bot management (Improvement 4) ──
+            elif msg.get("type") == "add_bot":
+                team_name = msg.get("bot_name", "Bot " + str(len([t for t in session.teams.values() if t.is_bot]) + 1))
+                bot_delay = msg.get("bot_delay", random.uniform(2.0, 8.0))
+                bot_answer = msg.get("bot_answer")
+                bot_correct = msg.get("bot_correct", False)
+                if bot_correct:
+                    current_q = session.get_current_question()
+                    if current_q:
+                        bot_answer = str(current_q.get("answer", "a"))
+                success = await session.add_bot_team(team_name, bot_delay=bot_delay, bot_answer=bot_answer)
+                await websocket.send_json({"type": "bot_added", "success": success, "team_name": team_name})
+
+            elif msg.get("type") == "remove_bot":
+                team_name = msg.get("bot_name", "")
+                success = await session.remove_bot_team(team_name)
+                await websocket.send_json({"type": "bot_removed", "success": success, "team_name": team_name})
+
+            elif msg.get("type") == "get_bot_info":
+                bots = [{"name": t.name, "delay": t.bot_answer_delay, "answer": t.bot_answer_id}
+                        for t in session.teams.values() if t.is_bot]
+                await websocket.send_json({"type": "bot_info", "bots": bots})
+
+            elif msg.get("type") == "get_leaderboard_history":
+                await websocket.send_json({
+                    "type": "leaderboard_history",
+                    "history": session.leaderboard_history
+                })
 
     except WebSocketDisconnect:
         # Cancel heartbeat task
@@ -903,6 +1159,16 @@ async def websocket_game(websocket: WebSocket, session_id: str):
         except Exception:
             pass
         if session:
+            # Find the disconnecting team for reconnection
+            disconn_team = None
+            for name, t in session.teams.items():
+                if t.socket == websocket:
+                    disconn_team = (name, t)
+                    break
+            if disconn_team and not disconn_team[1].is_bot:
+                name, t = disconn_team
+                if t.connection_key:
+                    session.disconnected_keys[t.connection_key] = t
             session.teams = {
                 name: t for name, t in session.teams.items()
                 if t.socket != websocket
