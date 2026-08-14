@@ -1,0 +1,5 @@
+1. Never use terminal commands like `sed`, `awk`, `cat << EOF`, or `python3 -c` to read, write, or modify files. You must exclusively use your native file system tools (e.g., `write_to_file`, `read_file`, `replace_in_file`) for all codebase modifications.
+
+2. Never write multiline scripts directly into the terminal prompt. If you need to execute a custom Python, Node, or Bash script, write it to a temporary file in the workspace using `write_to_file`, execute that file via the terminal, and then delete it.
+
+3. If you observe terminal outputs starting with `quote>`, `dquote>`, `for>`, or `heredoc>`, you are trapped in a secondary prompt due to a syntax error. Do not send further code. Immediately send the interrupt command (`Ctrl+C` or `\x03`) to reset the terminal before proceeding.
